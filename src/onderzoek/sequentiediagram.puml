@@ -1,0 +1,49 @@
+@startuml
+title Verbeterde situatie: debounce + last-value-wins (stabiele sync naar ZEN B)
+
+actor "Gebruiker" as U
+participant "ZEN A (slave)" as ZA
+participant "Node.js sync-service (master)" as NJS
+participant "RS-485 bus" as BUS
+participant "ZEN B (slave)" as ZB
+
+== Gebruiker draait aan knop ==
+U -> ZA : Draait knop (temperatuur)
+note over ZA
+Waarde verandert snel achter elkaar,
+maar Node.js gaat pas syncen als het stabiel is.
+end note
+
+== Node.js pollt en debounced ==
+loop elke 100ms poll
+  NJS -> BUS : Read Temp (ID=A)
+  activate BUS
+  BUS -> ZA : Read request
+  ZA --> BUS : Temp = X
+  BUS --> NJS : Temp waarde
+  deactivate BUS
+
+  alt Temp wijzigt
+    NJS -> NJS : Update "pendingTemp" = X\nReset debounce timer
+  end
+end
+
+== Debounce periode verloopt (bijv. 300ms zonder wijziging) ==
+NJS -> NJS : Debounce complete\n"stableTemp" = pendingTemp
+
+== Eén gecontroleerde write naar ZEN B ==
+NJS -> BUS : Write stableTemp naar ZEN B (ID=B)
+activate BUS
+BUS -> ZB : Write request (Temp = stableTemp)
+ZB --> BUS : ACK/Response
+BUS --> NJS : Response OK
+deactivate BUS
+
+note over NJS,ZB
+Resultaat:
+- Minder writes (alleen na "klaar met draaien")
+- Geen achterstand door snelle input
+- ZEN B blijft responsief en consistent
+end note
+
+@enduml

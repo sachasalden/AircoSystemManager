@@ -1,0 +1,36 @@
+{
+  "name": "aircotest",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "moxa:test": "ts-node src/moxa-connection-test.ts",
+    "moxa:modbus": "ts-node src/moxa-modbus-test.ts",
+    "moxa:diagnostics": "ts-node src/moxa-modbus-diagnostics.ts",
+    "moxa:scan": "ts-node src/moxa-scan-slave-ids.ts",
+    "moxa:interactive": "ts-node src/moxa-interactive-test.ts",
+    "moxa:echo": "ts-node src/simple-modbus-echo-test.ts",
+    "polarbear:check": "ts-node src/polarbear-panel-checker.ts",
+    "zentium:check": "ts-node src/zen-th2-mb4-checker.ts",
+    "zen:test": "ts-node src/zen-th2-mb4-test-volgens-handleiding.ts",
+    "debug:raw": "ts-node src/raw-debug-test.ts",
+    "diagnose": "ts-node src/ultimate-diagnostic.ts",
+    "baud:fix": "ts-node src/baud-rate-fix-guide.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.0",
+    "prettier": "^3.3.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "eslint": "^9.39.2",
+    "jsmodbus": "^4.0.10",
+    "modbus-rtu": "^0.2.1",
+    "modbus-serial": "^8.0.23"
+  }
+}
