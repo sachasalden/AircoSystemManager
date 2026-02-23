@@ -14,6 +14,11 @@
     "moxa:interactive": "ts-node src/moxa-interactive-test.ts",
     "moxa:echo": "ts-node src/simple-modbus-echo-test.ts",
     "polarbear:check": "ts-node src/polarbear-panel-checker.ts",
+    "polarbear:test": "ts-node src/polarbear-simple-test.ts",
+    "polarbear:backend:connect": "ts-node src/polarbear-backend-test.ts connect",
+    "polarbear:backend:read": "ts-node src/polarbear-backend-test.ts read",
+    "polarbear:backend:write": "ts-node src/polarbear-backend-test.ts write",
+    "polarbear:backend:all": "ts-node src/polarbear-backend-test.ts all",
     "zentium:check": "ts-node src/zen-th2-mb4-checker.ts",
     "zen:test": "ts-node src/zen-th2-mb4-test-volgens-handleiding.ts",
     "debug:raw": "ts-node src/raw-debug-test.ts",
@@ -21,6 +26,8 @@
     "baud:fix": "ts-node src/baud-rate-fix-guide.ts"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.2.0",
     "prettier": "^3.3.1",
     "ts-node": "^10.9.2",
@@ -28,9 +35,13 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "eslint": "^9.39.2",
+    "express": "^5.2.1",
     "jsmodbus": "^4.0.10",
     "modbus-rtu": "^0.2.1",
-    "modbus-serial": "^8.0.23"
+    "modbus-serial": "^8.0.23",
+    "mongodb": "^7.1.0",
+    "uuid": "^13.0.0"
   }
 }
