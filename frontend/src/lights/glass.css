@@ -1,0 +1,64 @@
+body {
+    margin: 0;
+    font-family: "Roboto", sans-serif;
+}
+
+.glass-panel {
+    border-radius: 20px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 20px;
+    height: 500px;
+    overflow: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.glass-container {
+    display: flex;
+    gap: 20px;
+    padding: 40px;
+}
+
+.glass-title {
+    color: white;
+    font-weight: 500;
+    margin-bottom: 15px;
+}
+
+.list-item {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 8px 12px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    color: white;
+    transition: 0.2s;
+}
+
+.selected {
+    background: rgb(172, 166, 60);
+}
+
+.selected-edit-icon {
+    color: rgb(172, 166, 60);
+}
+
+
+.bottom-nav {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 30px;
+    backdrop-filter: blur(15px);
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 0;
+    color: white;
+}
