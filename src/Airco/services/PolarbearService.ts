@@ -45,7 +45,6 @@ export default class PolarbearService {
     }
   }
 
-
   async getDeviceType(unitId: number): Promise<number | undefined> {
     this.client.setID(unitId);
     try {
@@ -152,11 +151,35 @@ export default class PolarbearService {
   }
 
   async getFanMode(unitId: number, zone: 1 | 2): Promise<number> {
+    // Read fan mode from the known fanmode registers (606/706) regardless of detected version.
+    this.client.setID(unitId);
     const register =
       zone === 1 ? registersV1.Zone1FanMode : registersV1.Zone2FanMode;
-    this.client.setID(unitId);
     const result = await this.client.readHoldingRegisters(register, 1);
     const arr = Array.isArray(result) ? result : (result as any).data;
     return arr[0];
+  }
+
+  // New: set fan speed. Supports both v1 and v2 using their respective registers.
+  async setFanSpeed(unitId: number, zone: 1 | 2, speed: number): Promise<void> {
+    const version = await this.detectVersion(unitId);
+    this.client.setID(unitId);
+    const register =
+      version === 'v2'
+        ? zone === 1
+          ? registersV2.Zone1FanSpeed
+          : registersV2.Zone2FanSpeed
+        : zone === 1
+        ? registersV1.Zone1FanSpeed
+        : registersV1.Zone2FanSpeed;
+    await this.client.writeRegister(register, speed);
+  }
+
+  // New: set fan mode. Use the legacy fan mode registers (606/706) which work on your devices.
+  async setFanMode(unitId: number, zone: 1 | 2, mode: number): Promise<void> {
+    this.client.setID(unitId);
+    const register =
+      zone === 1 ? registersV1.Zone1FanMode : registersV1.Zone2FanMode;
+    await this.client.writeRegister(register, mode);
   }
 }

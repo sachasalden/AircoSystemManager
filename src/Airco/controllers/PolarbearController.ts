@@ -71,4 +71,21 @@ export default class PolarbearController {
   async updateDevice(device: any) {
     return await this.repository.updateDevice(device);
   }
+
+  // Fan speed / fan mode helpers
+  async getFanSpeed(unitId: number, zone: 1 | 2): Promise<number> {
+    return await this.service.getFanSpeed(unitId, zone);
+  }
+
+  async setFanSpeed(unitId: number, zone: 1 | 2, speed: number): Promise<void> {
+    await this.service.setFanSpeed(unitId, zone, speed);
+  }
+
+  async getFanMode(unitId: number, zone: 1 | 2): Promise<number> {
+    return await this.service.getFanMode(unitId, zone);
+  }
+
+  async setFanMode(unitId: number, zone: 1 | 2, mode: number): Promise<void> {
+    await this.service.setFanMode(unitId, zone, mode);
+  }
 }

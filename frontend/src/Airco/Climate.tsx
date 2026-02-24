@@ -55,7 +55,7 @@ function WallpanelCard({
     device.version || 'polarbear-v1',
   );
   const [editPort, setEditPort] = useState<number | ''>(device.port);
-  const [editNewTerminalId, setEditNewTerminalId] = useState<number | ''>('');
+  const [editNewTerminalId, setEditNewTerminalId] = useState<string>('');
   const [editTerminalIds, setEditTerminalIds] = useState<number[]>(initialIds);
 
   // Sync when device updates in parent
@@ -73,11 +73,23 @@ function WallpanelCard({
   const terminalsText = initialIds.length ? initialIds.join(', ') : '—';
 
   function addEditTerminalId() {
-    if (editNewTerminalId === '' || Number.isNaN(Number(editNewTerminalId)))
+    if (!editNewTerminalId) return;
+    const parts = editNewTerminalId
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p !== '');
+    const idsToAdd = parts.map((p) => Number(p)).filter((n) => !Number.isNaN(n));
+    if (idsToAdd.length === 0) {
+      setEditNewTerminalId('');
       return;
-    const id = Number(editNewTerminalId);
-    if (editTerminalIds.includes(id)) return;
-    setEditTerminalIds((s) => [...s, id]);
+    }
+
+    setEditTerminalIds((s) => {
+      const set = new Set<number>(s);
+      idsToAdd.forEach((id) => set.add(id));
+      return Array.from(set).sort((a, b) => a - b);
+    });
+
     setEditNewTerminalId('');
   }
 
@@ -237,14 +249,10 @@ function WallpanelCard({
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     className="text-input"
-                    type="number"
+                    type="text"
                     value={editNewTerminalId}
-                    onChange={(e) =>
-                      setEditNewTerminalId(
-                        e.target.value === '' ? '' : Number(e.target.value),
-                      )
-                    }
-                    placeholder="e.g. 1"
+                    onChange={(e) => setEditNewTerminalId(e.target.value)}
+                    placeholder="e.g. 1,2,3"
                     style={{ flex: 1 }}
                   />
                   <button
@@ -317,7 +325,7 @@ export default function Climate() {
   const [version, setVersion] =
     useState<WallpanelDevice['version']>('polarbear-v1');
   const [port, setPort] = useState<number | ''>(8000);
-  const [newTerminalId, setNewTerminalId] = useState<number | ''>('');
+  const [newTerminalId, setNewTerminalId] = useState<string>('');
   const [terminalIds, setTerminalIds] = useState<number[]>([]);
 
   // Fetch zones/rooms/wallpanels tree
@@ -351,6 +359,15 @@ export default function Climate() {
       return;
     }
     if (!ip) return;
+
+    // Check if the selected room already has a wallpanel
+    const roomWithPanel = selectedZone?.rooms.find(
+      (r) => r.id === selectedRoomId && r.aircopanels.length > 0,
+    );
+    if (roomWithPanel) {
+      window.alert('This room already has a wallpanel. Only one wallpanel is allowed per room.');
+      return;
+    }
 
     const device = {
       zoneId: selectedZoneId,
@@ -398,10 +415,23 @@ export default function Climate() {
   }
 
   function addTerminalId() {
-    if (newTerminalId === '' || Number.isNaN(Number(newTerminalId))) return;
-    const id = Number(newTerminalId);
-    if (terminalIds.includes(id)) return;
-    setTerminalIds((s) => [...s, id]);
+    if (!newTerminalId) return;
+    const parts = newTerminalId
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p !== '');
+    const idsToAdd = parts.map((p) => Number(p)).filter((n) => !Number.isNaN(n));
+    if (idsToAdd.length === 0) {
+      setNewTerminalId('');
+      return;
+    }
+
+    setTerminalIds((s) => {
+      const set = new Set<number>(s);
+      idsToAdd.forEach((id) => set.add(id));
+      return Array.from(set).sort((a, b) => a - b);
+    });
+
     setNewTerminalId('');
   }
 
@@ -572,125 +602,132 @@ export default function Climate() {
         </div>
 
         {selectedZone && selectedRoom && (
-          <main className="climate-panel">
-            <h5 className="climate-title">Wallpanel — Add device</h5>
-            <div className="climate-form">
-              <div className="field span-2">
-                <label className="field-label">Name</label>
-                <input
-                  className="text-input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Hall Wallpanel"
-                />
-              </div>
+          // Only show add form when the selected room has NO wallpanel yet
+          (selectedRoom.aircopanels?.length || 0) === 0 ? (
+            <main className="climate-panel">
+              <h5 className="climate-title">Wallpanel — Add device</h5>
+              <div className="climate-form">
+                <div className="field span-2">
+                  <label className="field-label">Name</label>
+                  <input
+                    className="text-input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Hall Wallpanel"
+                  />
+                </div>
 
-              <div className="field span-2">
-                <label className="field-label">IP Address</label>
-                <input
-                  className="text-input"
-                  value={ip}
-                  onChange={(e) => setIp(e.target.value)}
-                  placeholder="192.168.xx.xx"
-                />
-              </div>
+                <div className="field span-2">
+                  <label className="field-label">IP Address</label>
+                  <input
+                    className="text-input"
+                    value={ip}
+                    onChange={(e) => setIp(e.target.value)}
+                    placeholder="192.168.xx.xx"
+                  />
+                </div>
 
-              <div className="field">
-                <label className="field-label">Polarbear Version</label>
-                <select
-                  className="browser-default"
-                  value={version}
-                  onChange={(e) =>
-                    setVersion(e.target.value as WallpanelDevice['version'])
-                  }
-                >
-                  <option value="polarbear-v1">polarbear-v1</option>
-                  <option value="polarbear-v2">polarbear-v2</option>
-                  <option value="polarbear-v3">polarbear-v3</option>
-                </select>
-              </div>
+                <div className="field">
+                  <label className="field-label">Polarbear Version</label>
+                  <select
+                    className="browser-default"
+                    value={version}
+                    onChange={(e) =>
+                      setVersion(e.target.value as WallpanelDevice['version'])
+                    }
+                  >
+                    <option value="polarbear-v1">polarbear-v1</option>
+                    <option value="polarbear-v2">polarbear-v2</option>
+                    <option value="polarbear-v3">polarbear-v3</option>
+                  </select>
+                </div>
 
-              <div className="field">
-                <label className="field-label">Port</label>
-                <input
-                  className="text-input"
-                  type="number"
-                  value={port}
-                  onChange={(e) =>
-                    setPort(e.target.value === '' ? '' : Number(e.target.value))
-                  }
-                  min={1}
-                />
-              </div>
-
-              <div className="field span-2">
-                <label className="field-label">Terminal IDs</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div className="field">
+                  <label className="field-label">Port</label>
                   <input
                     className="text-input"
                     type="number"
-                    value={newTerminalId}
+                    value={port}
                     onChange={(e) =>
-                      setNewTerminalId(
-                        e.target.value === '' ? '' : Number(e.target.value),
-                      )
+                      setPort(e.target.value === '' ? '' : Number(e.target.value))
                     }
-                    placeholder="e.g. 1"
-                    style={{ flex: 1 }}
+                    min={1}
                   />
-                  <button
-                    type="button"
-                    className="btn add-btn"
-                    onClick={addTerminalId}
+                </div>
+
+                <div className="field span-2">
+                  <label className="field-label">Terminal IDs</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      className="text-input"
+                      type="text"
+                      value={newTerminalId}
+                      onChange={(e) => setNewTerminalId(e.target.value)}
+                      placeholder="e.g. 1,2,3"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn add-btn"
+                      onClick={addTerminalId}
+                    >
+                      Add ID
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      marginTop: 8,
+                    }}
                   >
-                    Add ID
+                    {terminalIds.length === 0 && (
+                      <div className="empty">No terminal IDs</div>
+                    )}
+                    {terminalIds.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className="btn ghost-btn"
+                        onClick={() => removeTerminalId(t)}
+                        style={{ borderRadius: 999, padding: '8px 10px' }}
+                        title="Remove terminal"
+                      >
+                        Terminal {t} ✕
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    onClick={addWallpanel}
+                    className="btn add-btn"
+                    type="button"
+                  >
+                    Add
+                  </button>
+                  <button
+                    onClick={resetForm}
+                    className="btn ghost-btn"
+                    type="button"
+                  >
+                    Reset
                   </button>
                 </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                    marginTop: 8,
-                  }}
-                >
-                  {terminalIds.length === 0 && (
-                    <div className="empty">No terminal IDs</div>
-                  )}
-                  {terminalIds.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      className="btn ghost-btn"
-                      onClick={() => removeTerminalId(t)}
-                      style={{ borderRadius: 999, padding: '8px 10px' }}
-                      title="Remove terminal"
-                    >
-                      Terminal {t} ✕
-                    </button>
-                  ))}
-                </div>
               </div>
-
-              <div className="form-actions">
-                <button
-                  onClick={addWallpanel}
-                  className="btn add-btn"
-                  type="button"
-                >
-                  Add
-                </button>
-                <button
-                  onClick={resetForm}
-                  className="btn ghost-btn"
-                  type="button"
-                >
-                  Reset
-                </button>
+            </main>
+          ) : (
+            <main className="climate-panel">
+              <h5 className="climate-title">Wallpanel — Add device</h5>
+              <div>
+                <p className="notice">This room already has a wallpanel. Only one wallpanel is allowed per room.</p>
+                <p className="notice">If you want to manage terminals for the existing wallpanel, edit the wallpanel from the card above.</p>
               </div>
-            </div>
-          </main>
+            </main>
+          )
         )}
       </div>
 

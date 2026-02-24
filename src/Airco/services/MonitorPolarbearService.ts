@@ -23,6 +23,9 @@ export default class MonitorPolarbearService {
   private isTickRunning = false;
 
   private lastSetpointCache = new Map<string, number>();
+  // New caches for fan speed and fan mode
+  private lastFanSpeedCache = new Map<string, number>();
+  private lastFanModeCache = new Map<string, number>();
 
   private connections = new Map<
     ConnectionKey,
@@ -30,9 +33,6 @@ export default class MonitorPolarbearService {
   >();
 
   private connQueue = new Map<ConnectionKey, Promise<any>>();
-
-  private zone2DisabledForRoom = new Set<RoomKey>();
-  private zone2FailCount = new Map<RoomKey, number>();
 
   private unitCooldownUntil = new Map<string, number>();
 
@@ -42,7 +42,6 @@ export default class MonitorPolarbearService {
     private modbusTimeoutMs = 10000,
     private requestGapMs = 150,
     private writeFailCooldownMs = 30000,
-    private zone2DisableThreshold = 3,
   ) {}
 
   /* =========================
@@ -159,6 +158,15 @@ export default class MonitorPolarbearService {
     return `${ip}:${port}:${unitId}:zone:${zone}`;
   }
 
+  // New keys for fan speed and fan mode
+  private fanSpeedKey(ip: string, port: number, unitId: number, zone: Zone) {
+    return `${ip}:${port}:${unitId}:zone:${zone}:fanspeed`;
+  }
+
+  private fanModeKey(ip: string, port: number, unitId: number, zone: Zone) {
+    return `${ip}:${port}:${unitId}:zone:${zone}:fanmode`;
+  }
+
   private unitCooldownKey(ip: string, port: number, unitId: number) {
     return `${ip}:${port}:${unitId}`;
   }
@@ -183,7 +191,7 @@ export default class MonitorPolarbearService {
       rooms.get(rk)!.push(d);
     }
 
-    for (const [roomKey, devicesInRoom] of rooms.entries()) {
+    for (const [, devicesInRoom] of rooms.entries()) {
       const unitIds = [
         ...new Set(devicesInRoom.flatMap((d) => d.ids || [])),
       ].sort((a, b) => a - b);
@@ -205,6 +213,8 @@ export default class MonitorPolarbearService {
 
       for (const zone of zones) {
         const current: { unitId: number; value: number }[] = [];
+        const currentFanSpeed: { unitId: number; value: number }[] = [];
+        const currentFanMode: { unitId: number; value: number }[] = [];
 
         for (const unitId of unitIds) {
           try {
@@ -222,10 +232,41 @@ export default class MonitorPolarbearService {
 
             conn.isConnected = false;
           }
+
+          // Fan speed
+          try {
+            const fs = await this.enqueue(connKey, async () => {
+              const v = await conn.service.getFanSpeed(unitId, zone);
+              await this.sleep(this.requestGapMs);
+              return v;
+            });
+            currentFanSpeed.push({ unitId, value: fs });
+          } catch (err: any) {
+            console.warn(
+              `[MonitorPolarbearService] read fanspeed failed ${ip}:${port} unit=${unitId} zone=${zone}: ${err?.message || err}`,
+            );
+            conn.isConnected = false;
+          }
+
+          // Fan mode
+          try {
+            const fm = await this.enqueue(connKey, async () => {
+              const v = await conn.service.getFanMode(unitId, zone);
+              await this.sleep(this.requestGapMs);
+              return v;
+            });
+            currentFanMode.push({ unitId, value: fm });
+          } catch (err: any) {
+            console.warn(
+              `[MonitorPolarbearService] read fanmode failed ${ip}:${port} unit=${unitId} zone=${zone}: ${err?.message || err}`,
+            );
+            conn.isConnected = false;
+          }
         }
 
         if (current.length < 2) continue;
 
+        // --- SETPOINT SYNC (existing logic) ---
         const changed = current.filter(({ unitId, value }) => {
           const key = this.setpointKey(ip, port, unitId, zone);
           const prev = this.lastSetpointCache.get(key);
@@ -270,9 +311,117 @@ export default class MonitorPolarbearService {
           }
         }
 
+        // --- FANSPEED SYNC (new) ---
+        const changedFanSpeed = currentFanSpeed.filter(({ unitId, value }) => {
+          const key = this.fanSpeedKey(ip, port, unitId, zone);
+          const prev = this.lastFanSpeedCache.get(key);
+          return typeof prev === 'number' && prev !== value;
+        });
+
+        if (changedFanSpeed.length >= 1) {
+          const source = changedFanSpeed[0];
+          const targets = currentFanSpeed.filter(
+            (x) => x.unitId !== source.unitId && x.value !== source.value,
+          );
+
+          for (const t of targets) {
+            const cdKey = this.unitCooldownKey(ip, port, t.unitId);
+            if (Date.now() < (this.unitCooldownUntil.get(cdKey) ?? 0)) continue;
+
+            try {
+              await this.enqueue(connKey, async () => {
+                await conn.service.setFanSpeed(t.unitId, zone, source.value);
+                await this.sleep(this.requestGapMs);
+              });
+
+              this.lastFanSpeedCache.set(
+                this.fanSpeedKey(ip, port, t.unitId, zone),
+                source.value,
+              );
+            } catch (err: any) {
+              console.warn(
+                `[MonitorPolarbearService] write fanspeed failed ${ip}:${port} unit=${t.unitId} zone=${zone}: ${err?.message || err}`,
+              );
+
+              this.unitCooldownUntil.set(
+                cdKey,
+                Date.now() + this.writeFailCooldownMs,
+              );
+
+              conn.isConnected = false;
+            }
+          }
+        }
+
+        // --- FANMODE SYNC (new) ---
+        const changedFanMode = currentFanMode.filter(({ unitId, value }) => {
+          const key = this.fanModeKey(ip, port, unitId, zone);
+          const prev = this.lastFanModeCache.get(key);
+          return typeof prev === 'number' && prev !== value;
+        });
+
+        if (changedFanMode.length >= 1) {
+          const source = changedFanMode[0];
+          const targets = currentFanMode.filter(
+            (x) => x.unitId !== source.unitId && x.value !== source.value,
+          );
+
+          for (const t of targets) {
+            const cdKey = this.unitCooldownKey(ip, port, t.unitId);
+            if (Date.now() < (this.unitCooldownUntil.get(cdKey) ?? 0)) continue;
+
+            try {
+              await this.enqueue(connKey, async () => {
+                // setFanMode may throw for v2 devices; swallow per-unit errors
+                try {
+                  await conn.service.setFanMode(t.unitId, zone, source.value);
+                } catch (e) {
+                  // log and skip if not supported
+                  console.warn(
+                    `[MonitorPolarbearService] setFanMode not supported on unit=${t.unitId} (${String(e)})`,
+                  );
+                }
+
+                await this.sleep(this.requestGapMs);
+              });
+
+              this.lastFanModeCache.set(
+                this.fanModeKey(ip, port, t.unitId, zone),
+                source.value,
+              );
+            } catch (err: any) {
+              console.warn(
+                `[MonitorPolarbearService] write fanmode failed ${ip}:${port} unit=${t.unitId} zone=${zone}: ${err?.message || err}`,
+              );
+
+              this.unitCooldownUntil.set(
+                cdKey,
+                Date.now() + this.writeFailCooldownMs,
+              );
+
+              conn.isConnected = false;
+            }
+          }
+        }
+
+        // update caches for next round
         for (const { unitId, value } of current) {
           this.lastSetpointCache.set(
             this.setpointKey(ip, port, unitId, zone),
+            value,
+          );
+        }
+
+        for (const { unitId, value } of currentFanSpeed) {
+          this.lastFanSpeedCache.set(
+            this.fanSpeedKey(ip, port, unitId, zone),
+            value,
+          );
+        }
+
+        for (const { unitId, value } of currentFanMode) {
+          this.lastFanModeCache.set(
+            this.fanModeKey(ip, port, unitId, zone),
             value,
           );
         }
