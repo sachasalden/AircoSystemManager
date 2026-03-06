@@ -1,0 +1,73 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+interface AircoAdapter {
+  +connect(): Promise<void>
+  +disconnect(): Promise<void>
+  +getSetpoint(unitId: number, zone: AircoZone): Promise<number>
+  +setSetpoint(unitId: number, zone: AircoZone, temperature: number): Promise<void>
+  +getVirtualTemperature(unitId: number, zone: AircoZone): Promise<number>
+  +setVirtualTemperature(unitId: number, zone: AircoZone, temperature: number): Promise<void>
+  +getFanSpeed(unitId: number, zone: AircoZone): Promise<number>
+  +setFanSpeed(unitId: number, zone: AircoZone, speed: number): Promise<void>
+  +getFanMode(unitId: number, zone: AircoZone): Promise<number>
+  +setFanMode(unitId: number, zone: AircoZone, mode: number): Promise<void>
+}
+
+class HopmannAdapter {
+  -connected: boolean
+  -connection: AircoConnection
+  +connect(): Promise<void>
+  +disconnect(): Promise<void>
+  +getSetpoint(unitId: number, zone: AircoZone): Promise<number>
+  +setSetpoint(unitId: number, zone: AircoZone, temperature: number): Promise<void>
+  +getVirtualTemperature(unitId: number, zone: AircoZone): Promise<number>
+  +setVirtualTemperature(unitId: number, zone: AircoZone, temperature: number): Promise<void>
+  +getFanSpeed(unitId: number, zone: AircoZone): Promise<number>
+  +setFanSpeed(unitId: number, zone: AircoZone, speed: number): Promise<void>
+  +getFanMode(unitId: number, zone: AircoZone): Promise<number>
+  +setFanMode(unitId: number, zone: AircoZone, mode: number): Promise<void>
+}
+
+class AdapterRegistry {
+  -factories: Map<string, AdapterFactory>
+  +register(type: string, factory: AdapterFactory): void
+  +create(type: string, connection: AircoConnection): AircoAdapter
+  +has(type: string): boolean
+  -normalize(type: string): string
+}
+
+class AircoController {
+  -registry: AdapterRegistry
+  +getSetpoint(...): Promise<number>
+  +setSetpoint(...): Promise<void>
+  +getVirtualTemperature(...): Promise<number>
+  +setVirtualTemperature(...): Promise<void>
+  +getFanSpeed(...): Promise<number>
+  +setFanSpeed(...): Promise<void>
+  +getFanMode(...): Promise<number>
+  +setFanMode(...): Promise<void>
+}
+
+class AdapterFactory <<type>> {
+  + (connection: AircoConnection): AircoAdapter
+}
+
+class AircoConnection <<type>> {
+  +host: string
+  +port: number
+  +timeoutMs?: number
+}
+
+class AircoZone <<type>> {
+  +1
+  +2
+}
+
+AircoAdapter <|.. HopmannAdapter
+AdapterRegistry --> AdapterFactory : uses
+AdapterFactory ..> AircoAdapter : creates
+AdapterFactory ..> AircoConnection : needs
+AircoController --> AdapterRegistry : uses
+AircoController ..> AircoAdapter : uses
+@enduml

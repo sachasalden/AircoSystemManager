@@ -1,0 +1,67 @@
+@startuml AirconModule_and_Polarbear_Architecture
+
+package "airconModule" {
+  interface AirconditionerController {
+    +setTemperature(airconditioner, temperature): Promise
+    +setFanSpeed(airconditioner, speed): Promise
+  }
+
+  class airconditionerControllerImpl implements AirconditionerController
+  class condariaControllerImpl implements AirconditionerController
+  class heinEnHopmanControllerImpl implements AirconditionerController
+  class heinEnHopmanGooilandControllerImpl implements AirconditionerController
+  class heinEnHopmanIpControllerImpl implements AirconditionerController
+  class johnsonAcControllerImpl implements AirconditionerController
+  class vecoControllerImpl implements AirconditionerController
+}
+
+package "wallPanel" {
+  class PolarbearController {
+    -connection: any
+    -deviceRepository: DeviceRepository
+    -airconFactory: AirconFactory
+    +updateAcPanels(acpanel, airconditioners): Airconditioner[]
+    -updateAcPanel(id, airconditioners, acpanel): Promise
+    -getValues(id): Promise
+    -setValues(id, airconditioners, acpanel): Promise
+    -setCurrentTemperatures(id, airconditioners, acpanelType): Promise
+    -checkAcPanelUserInput(id): Promise
+    -send(connection, message): Promise
+    +closeConnection(): void
+  }
+
+  interface IPolarbear {
+    +updateAcPanels(acpanel, airconditioners): Airconditioner[]
+  }
+}
+
+package "entities" {
+  class Airconditioner {
+    +setTemperature: number
+    +currentTemperature: number
+    +currentFanspeed: number
+    +maxFanspeed: number
+    +data: object
+  }
+}
+
+package "factory" {
+  class AirconFactory {
+    +getAirconditionerImplementation(device): AirconditionerController
+  }
+}
+
+package "database" {
+  class DeviceRepository {
+    +getDeviceById(id): Promise
+  }
+}
+
+PolarbearController --> DeviceRepository
+PolarbearController --> AirconFactory
+PolarbearController --> Airconditioner
+PolarbearController --> AirconditionerController
+AirconFactory --> AirconditionerController
+AirconditionerController --> Airconditioner
+
+@enduml

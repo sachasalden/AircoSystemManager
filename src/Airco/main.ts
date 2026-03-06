@@ -2,7 +2,6 @@ import express from 'express';
 import PolarbearController from './controllers/PolarbearController';
 import cors from 'cors';
 import MonitorPolarbearService from './services/MonitorPolarbearService.ts';
-import { AircopanelRepository } from './repositories/WallpanelRepository.ts';
 
 
 

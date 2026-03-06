@@ -46,7 +46,7 @@ async function testReadData() {
     port: 4001,
   });
 
-  const unitIds = [2, 1]; // Test with unit IDs 1 and 2
+  const unitIds = [1, 2]; // Test with unit IDs 1 and 2
 
   try {
     await backend.connect();
@@ -107,7 +107,7 @@ async function testWriteData() {
     await backend.connect();
 
     // UNCOMMENT BELOW TO TEST WRITE OPERATIONS
-    const unitId = 2;
+    const unitId = 1;
     const zone = 1;
 
     console.log(`\n📝 Writing data to Unit ${unitId}, Zone ${zone}...`);
@@ -125,7 +125,7 @@ async function testWriteData() {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Set fan mode (1 = auto)
-    await backend.setFanMode(unitId, zone, 1);
+    await backend.setFanMode(unitId, zone, 0);
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     console.log('\n✅ Write operations completed');

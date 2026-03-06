@@ -22,10 +22,12 @@ export default class MonitorPolarbearService {
   private timer: NodeJS.Timeout | null = null;
   private isTickRunning = false;
 
-  private lastSetpointCache = new Map<string, number>();
-  // New caches for fan speed and fan mode
   private lastFanSpeedCache = new Map<string, number>();
   private lastFanModeCache = new Map<string, number>();
+  private lastSetpointCache = new Map<string, number>();
+
+  private recentlyWritten = new Map<string, number>();
+  private writeIgnoreWindowMs = 1500;
 
   private connections = new Map<
     ConnectionKey,
@@ -34,19 +36,12 @@ export default class MonitorPolarbearService {
 
   private connQueue = new Map<ConnectionKey, Promise<any>>();
 
-  private unitCooldownUntil = new Map<string, number>();
-
   constructor(
     private repository: AircopanelRepository,
     private pollIntervalMs = 5000,
     private modbusTimeoutMs = 10000,
     private requestGapMs = 150,
-    private writeFailCooldownMs = 30000,
   ) {}
-
-  /* =========================
-     START / STOP
-  ========================= */
 
   start() {
     if (this.timer) return;
@@ -55,64 +50,65 @@ export default class MonitorPolarbearService {
       this.tickSafe();
     }, this.pollIntervalMs);
 
-    console.log(
-      `[MonitorPolarbearService] started (interval=${this.pollIntervalMs}ms, timeout=${this.modbusTimeoutMs}ms)`,
-    );
+    console.log(`[MonitorPolarbearService] started`);
   }
 
-  stop() {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = null;
-    console.log('[MonitorPolarbearService] stopped');
+  private now() {
+    return Date.now();
+  }
+
+  private writeKey(
+    ip: string,
+    port: number,
+    unitId: number,
+    zone: Zone,
+    type: 'fs' | 'fm' | 'sp',
+  ) {
+    return `${ip}:${port}:${unitId}:${zone}:${type}`;
+  }
+
+  private getCacheKey(
+    ip: string,
+    port: number,
+    unitId: number,
+    zone: Zone,
+    type: 'fs' | 'fm' | 'sp',
+  ) {
+    return `${ip}:${port}:${unitId}:${zone}:${type}`;
   }
 
   private async tickSafe() {
-    if (this.isTickRunning) return; // voorkomt overlap
+    if (this.isTickRunning) return;
     this.isTickRunning = true;
 
     try {
       await this.tick();
-    } catch (err: any) {
-      console.error(
-        '[MonitorPolarbearService] tick error:',
-        err?.message || err,
-      );
     } finally {
       this.isTickRunning = false;
     }
   }
 
-  /* =========================
-     QUEUE FIX (PER CONNECTION)
-  ========================= */
-
-  private enqueue<T>(connKey: ConnectionKey, fn: () => Promise<T>): Promise<T> {
+  private enqueue<T>(connKey: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.connQueue.get(connKey) ?? Promise.resolve();
 
-    const next = previous
-      .catch(() => {}) // voorkom chain break
-      .then(async () => {
-        try {
-          return await fn();
-        } catch (err) {
-          throw err;
-        }
-      });
+    const next = previous.catch(() => {}).then(async () => await fn());
 
     this.connQueue.set(
       connKey,
-      next.catch(() => {}), // chain alive houden
+      next.catch(() => {}),
     );
-
     return next;
   }
 
-  /* =========================
-     CONNECTION MANAGEMENT
-  ========================= */
+  private enqueueWithGap<T>(connKey: string, fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(connKey, async () => {
+      const result = await fn();
+      await new Promise((r) => setTimeout(r, this.requestGapMs));
+      return result;
+    });
+  }
 
-  private getConnKey(ip: string, port: number): ConnectionKey {
+  private getConnKey(ip: string, port: number) {
     return `${ip}:${port}`;
   }
 
@@ -128,56 +124,12 @@ export default class MonitorPolarbearService {
     const conn = this.connections.get(key)!;
 
     if (!conn.isConnected) {
-      try {
-        await conn.client.connect(ip, port);
-        conn.isConnected = true;
-      } catch (err: any) {
-        conn.isConnected = false;
-        throw new Error(
-          `[MonitorPolarbearService] cannot connect to ${ip}:${port} (${err?.message || err})`,
-        );
-      }
+      await conn.client.connect(ip, port);
+      conn.isConnected = true;
     }
 
     return conn;
   }
-
-  /* =========================
-     HELPERS
-  ========================= */
-
-  private sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
-
-  private getRoomKey(d: DeviceRow): RoomKey {
-    return `${d.zoneId}:${d.roomId}:${d.ip}:${d.port}`;
-  }
-
-  private setpointKey(ip: string, port: number, unitId: number, zone: Zone) {
-    return `${ip}:${port}:${unitId}:zone:${zone}`;
-  }
-
-  // New keys for fan speed and fan mode
-  private fanSpeedKey(ip: string, port: number, unitId: number, zone: Zone) {
-    return `${ip}:${port}:${unitId}:zone:${zone}:fanspeed`;
-  }
-
-  private fanModeKey(ip: string, port: number, unitId: number, zone: Zone) {
-    return `${ip}:${port}:${unitId}:zone:${zone}:fanmode`;
-  }
-
-  private unitCooldownKey(ip: string, port: number, unitId: number) {
-    return `${ip}:${port}:${unitId}`;
-  }
-
-  private approxEqual(a: number, b: number, eps = 0.05) {
-    return Math.abs(a - b) <= eps;
-  }
-
-  /* =========================
-     MAIN TICK
-  ========================= */
 
   private async tick() {
     const devices = (await this.repository.getDevices()) as DeviceRow[];
@@ -186,246 +138,133 @@ export default class MonitorPolarbearService {
     const rooms = new Map<RoomKey, DeviceRow[]>();
 
     for (const d of devices) {
-      const rk = this.getRoomKey(d);
+      const rk = `${d.zoneId}:${d.roomId}:${d.ip}:${d.port}`;
       if (!rooms.has(rk)) rooms.set(rk, []);
       rooms.get(rk)!.push(d);
     }
 
-    for (const [, devicesInRoom] of rooms.entries()) {
-      const unitIds = [
-        ...new Set(devicesInRoom.flatMap((d) => d.ids || [])),
-      ].sort((a, b) => a - b);
-
+    for (const devicesInRoom of rooms.values()) {
+      const unitIds = [...new Set(devicesInRoom.flatMap((d) => d.ids || []))];
       if (unitIds.length < 2) continue;
 
       const { ip, port } = devicesInRoom[0];
       const connKey = this.getConnKey(ip, port);
+      const conn = await this.ensureConnection(ip, port);
 
-      let conn;
-      try {
-        conn = await this.ensureConnection(ip, port);
-      } catch (err) {
-        console.warn(String(err));
-        continue;
-      }
-
-      const zones: Zone[] = [1, 2];
-
-      for (const zone of zones) {
-        const current: { unitId: number; value: number }[] = [];
-        const currentFanSpeed: { unitId: number; value: number }[] = [];
-        const currentFanMode: { unitId: number; value: number }[] = [];
+      for (const zone of [1, 2] as Zone[]) {
+        const speedMap = new Map<number, number>();
+        const modeMap = new Map<number, number>();
+        const setpointMap = new Map<number, number>();
 
         for (const unitId of unitIds) {
-          try {
-            const sp = await this.enqueue(connKey, async () => {
-              const value = await conn.service.getSetpoint(unitId, zone);
-              await this.sleep(this.requestGapMs);
-              return value;
-            });
-
-            current.push({ unitId, value: sp });
-          } catch (err: any) {
-            console.warn(
-              `[MonitorPolarbearService] read failed ${ip}:${port} unit=${unitId} zone=${zone}: ${err?.message || err}`,
-            );
-
-            conn.isConnected = false;
-          }
-
-          // Fan speed
-          try {
-            const fs = await this.enqueue(connKey, async () => {
-              const v = await conn.service.getFanSpeed(unitId, zone);
-              await this.sleep(this.requestGapMs);
-              return v;
-            });
-            currentFanSpeed.push({ unitId, value: fs });
-          } catch (err: any) {
-            console.warn(
-              `[MonitorPolarbearService] read fanspeed failed ${ip}:${port} unit=${unitId} zone=${zone}: ${err?.message || err}`,
-            );
-            conn.isConnected = false;
-          }
-
-          // Fan mode
-          try {
-            const fm = await this.enqueue(connKey, async () => {
-              const v = await conn.service.getFanMode(unitId, zone);
-              await this.sleep(this.requestGapMs);
-              return v;
-            });
-            currentFanMode.push({ unitId, value: fm });
-          } catch (err: any) {
-            console.warn(
-              `[MonitorPolarbearService] read fanmode failed ${ip}:${port} unit=${unitId} zone=${zone}: ${err?.message || err}`,
-            );
-            conn.isConnected = false;
-          }
-        }
-
-        if (current.length < 2) continue;
-
-        // --- SETPOINT SYNC (existing logic) ---
-        const changed = current.filter(({ unitId, value }) => {
-          const key = this.setpointKey(ip, port, unitId, zone);
-          const prev = this.lastSetpointCache.get(key);
-          return typeof prev === 'number' && !this.approxEqual(prev, value);
-        });
-
-        if (changed.length >= 1) {
-          const source = changed[0];
-
-          const targets = current.filter(
-            (x) =>
-              x.unitId !== source.unitId &&
-              !this.approxEqual(x.value, source.value),
+          speedMap.set(
+            unitId,
+            await this.enqueueWithGap(connKey, () =>
+              conn.service.getFanSpeed(unitId, zone),
+            ),
           );
 
-          for (const t of targets) {
-            const cdKey = this.unitCooldownKey(ip, port, t.unitId);
-            if (Date.now() < (this.unitCooldownUntil.get(cdKey) ?? 0)) continue;
-
-            try {
-              await this.enqueue(connKey, async () => {
-                await conn.service.setSetpoint(t.unitId, zone, source.value);
-                await this.sleep(this.requestGapMs);
-              });
-
-              this.lastSetpointCache.set(
-                this.setpointKey(ip, port, t.unitId, zone),
-                source.value,
-              );
-            } catch (err: any) {
-              console.warn(
-                `[MonitorPolarbearService] write failed ${ip}:${port} unit=${t.unitId} zone=${zone}: ${err?.message || err}`,
-              );
-
-              this.unitCooldownUntil.set(
-                cdKey,
-                Date.now() + this.writeFailCooldownMs,
-              );
-
-              conn.isConnected = false;
-            }
-          }
-        }
-
-        // --- FANSPEED SYNC (new) ---
-        const changedFanSpeed = currentFanSpeed.filter(({ unitId, value }) => {
-          const key = this.fanSpeedKey(ip, port, unitId, zone);
-          const prev = this.lastFanSpeedCache.get(key);
-          return typeof prev === 'number' && prev !== value;
-        });
-
-        if (changedFanSpeed.length >= 1) {
-          const source = changedFanSpeed[0];
-          const targets = currentFanSpeed.filter(
-            (x) => x.unitId !== source.unitId && x.value !== source.value,
+          modeMap.set(
+            unitId,
+            await this.enqueueWithGap(connKey, () =>
+              conn.service.getFanMode(unitId, zone),
+            ),
           );
 
-          for (const t of targets) {
-            const cdKey = this.unitCooldownKey(ip, port, t.unitId);
-            if (Date.now() < (this.unitCooldownUntil.get(cdKey) ?? 0)) continue;
-
-            try {
-              await this.enqueue(connKey, async () => {
-                await conn.service.setFanSpeed(t.unitId, zone, source.value);
-                await this.sleep(this.requestGapMs);
-              });
-
-              this.lastFanSpeedCache.set(
-                this.fanSpeedKey(ip, port, t.unitId, zone),
-                source.value,
-              );
-            } catch (err: any) {
-              console.warn(
-                `[MonitorPolarbearService] write fanspeed failed ${ip}:${port} unit=${t.unitId} zone=${zone}: ${err?.message || err}`,
-              );
-
-              this.unitCooldownUntil.set(
-                cdKey,
-                Date.now() + this.writeFailCooldownMs,
-              );
-
-              conn.isConnected = false;
-            }
-          }
-        }
-
-        // --- FANMODE SYNC (new) ---
-        const changedFanMode = currentFanMode.filter(({ unitId, value }) => {
-          const key = this.fanModeKey(ip, port, unitId, zone);
-          const prev = this.lastFanModeCache.get(key);
-          return typeof prev === 'number' && prev !== value;
-        });
-
-        if (changedFanMode.length >= 1) {
-          const source = changedFanMode[0];
-          const targets = currentFanMode.filter(
-            (x) => x.unitId !== source.unitId && x.value !== source.value,
-          );
-
-          for (const t of targets) {
-            const cdKey = this.unitCooldownKey(ip, port, t.unitId);
-            if (Date.now() < (this.unitCooldownUntil.get(cdKey) ?? 0)) continue;
-
-            try {
-              await this.enqueue(connKey, async () => {
-                // setFanMode may throw for v2 devices; swallow per-unit errors
-                try {
-                  await conn.service.setFanMode(t.unitId, zone, source.value);
-                } catch (e) {
-                  // log and skip if not supported
-                  console.warn(
-                    `[MonitorPolarbearService] setFanMode not supported on unit=${t.unitId} (${String(e)})`,
-                  );
-                }
-
-                await this.sleep(this.requestGapMs);
-              });
-
-              this.lastFanModeCache.set(
-                this.fanModeKey(ip, port, t.unitId, zone),
-                source.value,
-              );
-            } catch (err: any) {
-              console.warn(
-                `[MonitorPolarbearService] write fanmode failed ${ip}:${port} unit=${t.unitId} zone=${zone}: ${err?.message || err}`,
-              );
-
-              this.unitCooldownUntil.set(
-                cdKey,
-                Date.now() + this.writeFailCooldownMs,
-              );
-
-              conn.isConnected = false;
-            }
-          }
-        }
-
-        // update caches for next round
-        for (const { unitId, value } of current) {
-          this.lastSetpointCache.set(
-            this.setpointKey(ip, port, unitId, zone),
-            value,
+          setpointMap.set(
+            unitId,
+            await this.enqueueWithGap(connKey, () =>
+              conn.service.getSetpoint(unitId, zone),
+            ),
           );
         }
 
-        for (const { unitId, value } of currentFanSpeed) {
-          this.lastFanSpeedCache.set(
-            this.fanSpeedKey(ip, port, unitId, zone),
-            value,
-          );
-        }
+        await this.syncProperty(
+          ip,
+          port,
+          zone,
+          unitIds,
+          speedMap,
+          this.lastFanSpeedCache,
+          'fs',
+          (unitId, value) => conn.service.setFanSpeed(unitId, zone, value),
+          connKey,
+        );
 
-        for (const { unitId, value } of currentFanMode) {
-          this.lastFanModeCache.set(
-            this.fanModeKey(ip, port, unitId, zone),
-            value,
-          );
-        }
+        await this.syncProperty(
+          ip,
+          port,
+          zone,
+          unitIds,
+          modeMap,
+          this.lastFanModeCache,
+          'fm',
+          (unitId, value) => conn.service.setFanMode(unitId, zone, value),
+          connKey,
+        );
+
+        await this.syncProperty(
+          ip,
+          port,
+          zone,
+          unitIds,
+          setpointMap,
+          this.lastSetpointCache,
+          'sp',
+          (unitId, value) => conn.service.setSetpoint(unitId, zone, value),
+          connKey,
+        );
       }
+    }
+  }
+
+  private async syncProperty(
+    ip: string,
+    port: number,
+    zone: Zone,
+    unitIds: number[],
+    valueMap: Map<number, number>,
+    cache: Map<string, number>,
+    type: 'fs' | 'fm' | 'sp',
+    writeFn: (unitId: number, value: number) => Promise<void>,
+    connKey: string,
+  ) {
+    const changed = [...valueMap.entries()].filter(([unitId, value]) => {
+      const cacheKey = this.getCacheKey(ip, port, unitId, zone, type);
+      const prev = cache.get(cacheKey);
+
+      if (prev === undefined || prev === value) return false;
+
+      const lastWrite = this.recentlyWritten.get(
+        this.writeKey(ip, port, unitId, zone, type),
+      );
+
+      if (lastWrite && this.now() - lastWrite < this.writeIgnoreWindowMs) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (changed.length === 1) {
+      const [sourceId, value] = changed[0];
+
+      for (const target of unitIds) {
+        if (target === sourceId) continue;
+
+        console.log(`[SYNC ${type}] ${sourceId} -> ${target} value=${value}`);
+
+        await this.enqueueWithGap(connKey, () => writeFn(target, value));
+
+        this.recentlyWritten.set(
+          this.writeKey(ip, port, target, zone, type),
+          this.now(),
+        );
+      }
+    }
+
+    for (const [unitId, value] of valueMap.entries()) {
+      cache.set(this.getCacheKey(ip, port, unitId, zone, type), value);
     }
   }
 }

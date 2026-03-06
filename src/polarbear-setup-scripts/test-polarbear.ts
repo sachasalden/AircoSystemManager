@@ -41,8 +41,8 @@ async function main() {
   // await new Promise((r) => setTimeout(r, 500));
 
   // Enable beide zones
-  await setTowelHeater(client, unitIds, 1, false);
-  await setTowelHeater(client, unitIds, 2, false);
+  // await setTowelHeater(client, unitIds, 1, false);
+  // await setTowelHeater(client, unitIds, 2, false);
 
   // await setUpperLimit(client, unitIds, 30); // Upper limit: 30
   // await new Promise((r) => setTimeout(r, 500));
@@ -53,7 +53,7 @@ async function main() {
   // await setVirtualTemp(client, unitIds, 2, 24.0); // Zone 2, 24.0°C
   // await new Promise((r) => setTimeout(r, 500));
   //
-  // // Test setSetpoint op beide devices
+  // Test setSetpoint op beide devices
   // await setSetpoint(client, unitIds, 1, 23.5); // Zone 1, 23.5°C
   // await new Promise((r) => setTimeout(r, 500));
 
@@ -73,16 +73,22 @@ async function main() {
   // await setFlags(client, unitIds);
   // await new Promise((r) => setTimeout(r, 500));
   //
-  // await setFanmode(client, unitIds, 1, 1); // voor auto 1 voor off 0
+  // await getFanmode(client, [1], 1);
   // await new Promise((r) => setTimeout(r, 500));
   //
+  await setFanmode(client, [1], 1, 1); // voor auto 1 voor off 0
+  await new Promise((r) => setTimeout(r, 500));
+
+  await setFanmode(client, [1], 1, 1); // voor auto 1 voor off 0
+  await new Promise((r) => setTimeout(r, 500));
+  //
+  // await getFanmode(client, [1], 1);
+  // await new Promise((r) => setTimeout(r, 500));
+
   // await setFanspeed(client, unitIds, 1, 1);
   // await new Promise((r) => setTimeout(r, 500));
   //
   // await getFanspeed(client, unitIds, 1);
-  // await new Promise((r) => setTimeout(r, 500));
-  //
-  // await getFanmode(client, unitIds, 1);
   // await new Promise((r) => setTimeout(r, 500));
   //
   // await getSetpoint(client, unitIds, 1);
@@ -115,8 +121,8 @@ async function main() {
   // await getActualTemp(client, unitIds, 1);
   // await new Promise((r) => setTimeout(r, 500));
 
-  client.close();
-  console.log('Connection closed');
+  // client.close();
+  // console.log('Connection closed');
 }
 
 main().catch(console.error);
