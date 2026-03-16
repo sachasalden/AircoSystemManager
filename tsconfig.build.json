@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src"],
+  "exclude": [
+    "src/polarbear-setup-scripts/**/*",
+    "src/polarbear-backend.ts",
+    "src/polarbear-backend-test.ts"
+  ]
+}
+

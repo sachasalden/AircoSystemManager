@@ -107,12 +107,6 @@ Meerdere schrijvende apparaten leiden tot race conditions en communicatieconflic
 
 ---
 
-## 8. Aanbeveling
-Om de synchronisatieproblemen op te lossen, wordt het volgende aanbevolen:
-
-
----
-
 ## 9. Relevantie van het onderzoek
 
 Dit onderzoek toont aan dat bij industriële communicatie niet alleen hardware, maar vooral architectuur en rolverdeling bepalend zijn voor systeemstabiliteit.

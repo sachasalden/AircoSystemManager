@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc -p tsconfig.build.json",
+    "frontend:build": "npm --prefix frontend run build",
     "preview": "vite preview",
+    "test": "jest --runInBand",
+    "airco:backend": "node --loader ts-node/esm --experimental-specifier-resolution=node src/Airco/main.ts",
     "moxa:test": "ts-node src/moxa-connection-test.ts",
     "moxa:modbus": "ts-node src/moxa-modbus-test.ts",
     "moxa:diagnostics": "ts-node src/moxa-modbus-diagnostics.ts",
@@ -46,6 +49,7 @@
     "modbus-rtu": "^0.2.1",
     "modbus-serial": "^8.0.23",
     "mongodb": "^7.1.0",
+    "mqtt": "^5.15.0",
     "uuid": "^13.0.0"
   }
 }
