@@ -1,14 +1,25 @@
 import AdapterRegistry from '../adapters/AdapterRegistry';
-import { AircoAdapter, AircoZone } from '../adapters/IAircoAdapter';
+import {
+  AircoAdapter,
+  AircoConnection,
+  AircoZone,
+} from '../adapters/IAircoAdapter';
 import {
   AircopanelRepository,
-  Device,
+  AirconditionerDevice,
 } from '../repositories/WallpanelRepository';
 
-type DeviceWithMeta = Device & { zoneId?: string; roomId?: string };
+type AircoDeviceWithMeta = AirconditionerDevice & {
+  zoneId?: string;
+  roomId?: string;
+};
 
 export default class AircoController {
   private repository: AircopanelRepository;
+
+  // Tijdelijk hardcoded, omdat airconditioners in jouw DB geen ip/port op device-niveau hebben.
+  private readonly AIRCO_HOST = '192.168.55.10';
+  private readonly AIRCO_PORT = 502;
 
   constructor(
     private registry: AdapterRegistry,
@@ -22,55 +33,86 @@ export default class AircoController {
   // --------------------
 
   async getDevices() {
-    return await this.repository.getDevices();
+    return await this.repository.getAircoDevices();
   }
 
-  async addDevice(device: any) {
-    return await this.repository.addDevice(device);
+  async addDevice(
+    device: AircoDeviceWithMeta & { zoneId: string; roomId: string },
+  ) {
+    return await this.repository.addAircoDevice(device);
   }
 
   async getDeviceById(deviceId: string) {
-    return await this.repository.getDeviceById(deviceId);
+    return await this.repository.getAircoDeviceById(deviceId);
   }
 
   async deleteDevice(deviceId: string) {
-    return await this.repository.deleteDevice(deviceId);
+    return await this.repository.deleteAircoDevice(deviceId);
   }
 
-  async updateDevice(device: any) {
-    return await this.repository.updateDevice(device);
+  async updateDevice(device: AircoDeviceWithMeta) {
+    return await this.repository.updateAircoDevice(device);
   }
 
   // --------------------
   // Adapter helpers
   // --------------------
 
-  private requireConnection(device: DeviceWithMeta) {
-    if (!device.ip || !device.port) {
-      throw new Error('Device missing ip/port');
+  private requireConnection(device: AircoDeviceWithMeta): AircoConnection {
+    const type = device.data?.type;
+    const model = device.deviceType;
+
+    if (!type) {
+      throw new Error('Airco device missing data.type');
     }
-    if (!device.type) {
-      throw new Error('Device missing type');
-    }
+
     return {
-      host: device.ip,
-      port: device.port,
+      host: this.AIRCO_HOST,
+      port: this.AIRCO_PORT,
+      type,
+      model,
     };
+  }
+
+  private resolveUnitId(
+    device: AircoDeviceWithMeta,
+    requestedUnitId?: number,
+  ): number {
+    if (Number.isFinite(requestedUnitId)) {
+      return Number(requestedUnitId);
+    }
+
+    const dbUnitId = Number(device.data?.deviceTerminalId);
+
+    if (!Number.isFinite(dbUnitId)) {
+      throw new Error('Airco device missing valid data.deviceTerminalId');
+    }
+
+    return dbUnitId;
   }
 
   private async withAdapter<T>(
     deviceId: string,
-    fn: (adapter: AircoAdapter, device: DeviceWithMeta) => Promise<T>,
+    fn: (
+      adapter: AircoAdapter,
+      device: AircoDeviceWithMeta,
+      resolvedUnitId: number,
+    ) => Promise<T>,
+    requestedUnitId?: number,
   ): Promise<T> {
-    const device = await this.repository.getDeviceById(deviceId);
-    if (!device) throw new Error('Device not found');
+    const device = await this.repository.getAircoDeviceById(deviceId);
+    if (!device) {
+      throw new Error('Device not found');
+    }
 
     const connection = this.requireConnection(device);
-    const adapter = this.registry.create(device.type, connection);
+    const resolvedUnitId = this.resolveUnitId(device, requestedUnitId);
+    const adapter = this.registry.create(connection.type!, connection);
 
     await adapter.connect();
+
     try {
-      return await fn(adapter, device);
+      return await fn(adapter, device, resolvedUnitId);
     } finally {
       await adapter.disconnect();
     }
@@ -85,8 +127,11 @@ export default class AircoController {
     unitId: number,
     zone: AircoZone,
   ): Promise<number> {
-    return this.withAdapter(deviceId, (adapter) =>
-      adapter.getSetpoint(unitId, zone),
+    return this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.getSetpoint(resolvedUnitId, zone),
+      unitId,
     );
   }
 
@@ -96,8 +141,11 @@ export default class AircoController {
     zone: AircoZone,
     temperature: number,
   ): Promise<void> {
-    await this.withAdapter(deviceId, (adapter) =>
-      adapter.setSetpoint(unitId, zone, temperature),
+    await this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.setSetpoint(resolvedUnitId, zone, temperature),
+      unitId,
     );
   }
 
@@ -106,8 +154,11 @@ export default class AircoController {
     unitId: number,
     zone: AircoZone,
   ): Promise<number> {
-    return this.withAdapter(deviceId, (adapter) =>
-      adapter.getVirtualTemperature(unitId, zone),
+    return this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.getVirtualTemperature(resolvedUnitId, zone),
+      unitId,
     );
   }
 
@@ -117,8 +168,11 @@ export default class AircoController {
     zone: AircoZone,
     temperature: number,
   ): Promise<void> {
-    await this.withAdapter(deviceId, (adapter) =>
-      adapter.setVirtualTemperature(unitId, zone, temperature),
+    await this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.setVirtualTemperature(resolvedUnitId, zone, temperature),
+      unitId,
     );
   }
 
@@ -127,8 +181,11 @@ export default class AircoController {
     unitId: number,
     zone: AircoZone,
   ): Promise<number> {
-    return this.withAdapter(deviceId, (adapter) =>
-      adapter.getFanSpeed(unitId, zone),
+    return this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.getFanSpeed(resolvedUnitId, zone),
+      unitId,
     );
   }
 
@@ -138,8 +195,11 @@ export default class AircoController {
     zone: AircoZone,
     speed: number,
   ): Promise<void> {
-    await this.withAdapter(deviceId, (adapter) =>
-      adapter.setFanSpeed(unitId, zone, speed),
+    await this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.setFanSpeed(resolvedUnitId, zone, speed),
+      unitId,
     );
   }
 
@@ -148,8 +208,11 @@ export default class AircoController {
     unitId: number,
     zone: AircoZone,
   ): Promise<number> {
-    return this.withAdapter(deviceId, (adapter) =>
-      adapter.getFanMode(unitId, zone),
+    return this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.getFanMode(resolvedUnitId, zone),
+      unitId,
     );
   }
 
@@ -159,8 +222,11 @@ export default class AircoController {
     zone: AircoZone,
     mode: number,
   ): Promise<void> {
-    await this.withAdapter(deviceId, (adapter) =>
-      adapter.setFanMode(unitId, zone, mode),
+    await this.withAdapter(
+      deviceId,
+      (adapter, _device, resolvedUnitId) =>
+        adapter.setFanMode(resolvedUnitId, zone, mode),
+      unitId,
     );
   }
 }

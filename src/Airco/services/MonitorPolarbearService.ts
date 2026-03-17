@@ -1,84 +1,120 @@
-// src/Airco/services/MonitorPolarbearService.ts
-
 import ModbusClient from '../clients/ModbusClient';
+import { AircopanelRepository, type Device } from '../repositories/WallpanelRepository';
+import type SyncEchoGuard from './SyncEchoGuard';
+import {
+  SYNC_PROPERTIES,
+  createDeviceStateKey,
+  sameNumericValue,
+  type SyncMessage,
+  type SyncProperty,
+  type Zone,
+} from './SyncTypes';
 import PolarbearService from './PolarbearService';
-import { AircopanelRepository } from '../repositories/WallpanelRepository';
 
-type Zone = 1 | 2;
-
-type DeviceRow = {
-  id: string;
-  ip: string;
-  port: number;
-  ids: number[];
+type DeviceRow = Device & {
   zoneId: string;
   roomId: string;
 };
 
+type Snapshot = Record<SyncProperty, number>;
 type ConnectionKey = string;
-type RoomKey = string;
 
 export default class MonitorPolarbearService {
+  private readonly TEST_ZONE_ID = '691ee9f917ddcc79daf9fe84';
+  private readonly TEST_ROOM_ID = '2134af85-4377-2330-af2d-72143bec6574';
   private timer: NodeJS.Timeout | null = null;
   private isTickRunning = false;
-
-  private lastFanSpeedCache = new Map<string, number>();
-  private lastFanModeCache = new Map<string, number>();
-  private lastSetpointCache = new Map<string, number>();
-
-  private recentlyWritten = new Map<string, number>();
-  private writeIgnoreWindowMs = 1500;
+  private lastSeenState = new Map<string, number>();
 
   private connections = new Map<
     ConnectionKey,
     { client: ModbusClient; service: PolarbearService; isConnected: boolean }
   >();
 
-  private connQueue = new Map<ConnectionKey, Promise<any>>();
+  private connQueue = new Map<ConnectionKey, Promise<unknown>>();
 
   constructor(
     private repository: AircopanelRepository,
+    private onStateChange?: (message: SyncMessage) => Promise<void>,
+    private echoGuard?: SyncEchoGuard,
     private pollIntervalMs = 5000,
     private modbusTimeoutMs = 10000,
     private requestGapMs = 150,
   ) {}
 
-  start() {
-    if (this.timer) return;
+  start(): void {
+    if (this.timer) {
+      return;
+    }
 
     this.timer = setInterval(() => {
-      this.tickSafe();
+      void this.tickSafe();
     }, this.pollIntervalMs);
 
-    console.log(`[MonitorPolarbearService] started`);
+    console.log('[MonitorPolarbearService] started');
   }
 
-  private now() {
-    return Date.now();
+  async applyRemoteChange(message: SyncMessage): Promise<void> {
+    const devices = (await this.repository.getDevices()).filter(
+      (device) =>
+        device.zoneId === this.TEST_ZONE_ID &&
+        device.roomId === this.TEST_ROOM_ID,
+    );
+    const targets = devices.filter(
+      (device) =>
+        device.zoneId === message.zoneId && device.roomId === message.roomId,
+    );
+
+    for (const device of targets) {
+      try {
+        const connKey = this.getConnKey(device.ip, device.port);
+        const conn = await this.ensureConnection(device.ip, device.port);
+
+        for (const unitId of this.normalizeUnitIds(device.ids)) {
+          this.echoGuard?.expectEcho(
+            'panel',
+            device.id,
+            unitId,
+            message.zone,
+            message.property,
+            message.value,
+          );
+
+          await this.enqueueWithGap(connKey, () =>
+            this.writeProperty(
+              conn.service,
+              unitId,
+              message.zone,
+              message.property,
+              message.value,
+            ),
+          );
+
+          this.lastSeenState.set(
+            createDeviceStateKey(
+              'panel',
+              device.id,
+              unitId,
+              message.zone,
+              message.property,
+            ),
+            message.value,
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[MonitorPolarbearService] failed to apply ${message.property}=${message.value} to device ${device.id}`,
+          error,
+        );
+      }
+    }
   }
 
-  private writeKey(
-    ip: string,
-    port: number,
-    unitId: number,
-    zone: Zone,
-    type: 'fs' | 'fm' | 'sp',
-  ) {
-    return `${ip}:${port}:${unitId}:${zone}:${type}`;
-  }
+  private async tickSafe(): Promise<void> {
+    if (this.isTickRunning) {
+      return;
+    }
 
-  private getCacheKey(
-    ip: string,
-    port: number,
-    unitId: number,
-    zone: Zone,
-    type: 'fs' | 'fm' | 'sp',
-  ) {
-    return `${ip}:${port}:${unitId}:${zone}:${type}`;
-  }
-
-  private async tickSafe() {
-    if (this.isTickRunning) return;
     this.isTickRunning = true;
 
     try {
@@ -88,28 +124,34 @@ export default class MonitorPolarbearService {
     }
   }
 
+  private getConnKey(ip: string, port: number): string {
+    return `${ip}:${port}`;
+  }
+
+  private normalizeUnitIds(ids: number[]): number[] {
+    return [...new Set((ids || []).map(Number))].filter((unitId) =>
+      Number.isFinite(unitId),
+    );
+  }
+
   private enqueue<T>(connKey: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.connQueue.get(connKey) ?? Promise.resolve();
-
-    const next = previous.catch(() => {}).then(async () => await fn());
+    const next = previous.catch(() => undefined).then(fn);
 
     this.connQueue.set(
       connKey,
-      next.catch(() => {}),
+      next.then(() => undefined).catch(() => undefined),
     );
+
     return next;
   }
 
   private enqueueWithGap<T>(connKey: string, fn: () => Promise<T>): Promise<T> {
     return this.enqueue(connKey, async () => {
       const result = await fn();
-      await new Promise((r) => setTimeout(r, this.requestGapMs));
+      await new Promise((resolve) => setTimeout(resolve, this.requestGapMs));
       return result;
     });
-  }
-
-  private getConnKey(ip: string, port: number) {
-    return `${ip}:${port}`;
   }
 
   private async ensureConnection(ip: string, port: number) {
@@ -131,140 +173,198 @@ export default class MonitorPolarbearService {
     return conn;
   }
 
-  private async tick() {
-    const devices = (await this.repository.getDevices()) as DeviceRow[];
-    if (!devices?.length) return;
+  private async tick(): Promise<void> {
+    const devices = (await this.repository.getDevices()).filter(
+      (device) =>
+        device.zoneId === this.TEST_ZONE_ID &&
+        device.roomId === this.TEST_ROOM_ID,
+    );
 
-    const rooms = new Map<RoomKey, DeviceRow[]>();
+    for (const device of devices) {
+      const unitIds = this.normalizeUnitIds(device.ids);
 
-    for (const d of devices) {
-      const rk = `${d.zoneId}:${d.roomId}:${d.ip}:${d.port}`;
-      if (!rooms.has(rk)) rooms.set(rk, []);
-      rooms.get(rk)!.push(d);
-    }
+      if (unitIds.length === 0) {
+        continue;
+      }
 
-    for (const devicesInRoom of rooms.values()) {
-      const unitIds = [...new Set(devicesInRoom.flatMap((d) => d.ids || []))];
-      if (unitIds.length < 2) continue;
-
-      const { ip, port } = devicesInRoom[0];
-      const connKey = this.getConnKey(ip, port);
-      const conn = await this.ensureConnection(ip, port);
-
-      for (const zone of [1, 2] as Zone[]) {
-        const speedMap = new Map<number, number>();
-        const modeMap = new Map<number, number>();
-        const setpointMap = new Map<number, number>();
+      try {
+        const connKey = this.getConnKey(device.ip, device.port);
+        const conn = await this.ensureConnection(device.ip, device.port);
 
         for (const unitId of unitIds) {
-          speedMap.set(
-            unitId,
-            await this.enqueueWithGap(connKey, () =>
-              conn.service.getFanSpeed(unitId, zone),
-            ),
-          );
-
-          modeMap.set(
-            unitId,
-            await this.enqueueWithGap(connKey, () =>
-              conn.service.getFanMode(unitId, zone),
-            ),
-          );
-
-          setpointMap.set(
-            unitId,
-            await this.enqueueWithGap(connKey, () =>
-              conn.service.getSetpoint(unitId, zone),
-            ),
-          );
+          for (const zone of [1, 2] as const) {
+            const snapshot = await this.readSnapshot(
+              conn.service,
+              connKey,
+              unitId,
+              zone,
+            );
+            await this.handleSnapshot(
+              device,
+              unitIds,
+              unitId,
+              zone,
+              snapshot,
+              conn.service,
+              connKey,
+            );
+          }
         }
-
-        await this.syncProperty(
-          ip,
-          port,
-          zone,
-          unitIds,
-          speedMap,
-          this.lastFanSpeedCache,
-          'fs',
-          (unitId, value) => conn.service.setFanSpeed(unitId, zone, value),
-          connKey,
-        );
-
-        await this.syncProperty(
-          ip,
-          port,
-          zone,
-          unitIds,
-          modeMap,
-          this.lastFanModeCache,
-          'fm',
-          (unitId, value) => conn.service.setFanMode(unitId, zone, value),
-          connKey,
-        );
-
-        await this.syncProperty(
-          ip,
-          port,
-          zone,
-          unitIds,
-          setpointMap,
-          this.lastSetpointCache,
-          'sp',
-          (unitId, value) => conn.service.setSetpoint(unitId, zone, value),
-          connKey,
+      } catch (error) {
+        console.error(
+          `[MonitorPolarbearService] failed for device ${device.id} via ${device.ip}:${device.port}`,
+          error,
         );
       }
     }
   }
 
-  private async syncProperty(
-    ip: string,
-    port: number,
+  private async handleSnapshot(
+    device: DeviceRow,
+    siblingUnitIds: number[],
+    unitId: number,
     zone: Zone,
-    unitIds: number[],
-    valueMap: Map<number, number>,
-    cache: Map<string, number>,
-    type: 'fs' | 'fm' | 'sp',
-    writeFn: (unitId: number, value: number) => Promise<void>,
+    snapshot: Snapshot,
+    service: PolarbearService,
     connKey: string,
-  ) {
-    const changed = [...valueMap.entries()].filter(([unitId, value]) => {
-      const cacheKey = this.getCacheKey(ip, port, unitId, zone, type);
-      const prev = cache.get(cacheKey);
+  ): Promise<void> {
+    for (const property of SYNC_PROPERTIES) {
+      const value = snapshot[property];
+      const stateKey = createDeviceStateKey(
+        'panel',
+        device.id,
+        unitId,
+        zone,
+        property,
+      );
+      const previous = this.lastSeenState.get(stateKey);
 
-      if (prev === undefined || prev === value) return false;
+      this.lastSeenState.set(stateKey, value);
 
-      const lastWrite = this.recentlyWritten.get(
-        this.writeKey(ip, port, unitId, zone, type),
+      if (previous === undefined || sameNumericValue(previous, value)) {
+        continue;
+      }
+
+      if (
+        this.echoGuard?.consumeExpectedEcho(
+          'panel',
+          device.id,
+          unitId,
+          zone,
+          property,
+          value,
+        )
+      ) {
+        continue;
+      }
+
+      await this.syncSiblingUnits(
+        device,
+        siblingUnitIds,
+        unitId,
+        zone,
+        property,
+        value,
+        service,
+        connKey,
       );
 
-      if (lastWrite && this.now() - lastWrite < this.writeIgnoreWindowMs) {
-        return false;
+      if (!this.onStateChange) {
+        continue;
       }
 
-      return true;
-    });
-
-    if (changed.length === 1) {
-      const [sourceId, value] = changed[0];
-
-      for (const target of unitIds) {
-        if (target === sourceId) continue;
-
-        console.log(`[SYNC ${type}] ${sourceId} -> ${target} value=${value}`);
-
-        await this.enqueueWithGap(connKey, () => writeFn(target, value));
-
-        this.recentlyWritten.set(
-          this.writeKey(ip, port, target, zone, type),
-          this.now(),
-        );
-      }
+      await this.onStateChange({
+        schema: 'aircotest.sync.v1',
+        origin: 'panel',
+        zoneId: device.zoneId,
+        roomId: device.roomId,
+        deviceId: device.id,
+        unitId,
+        zone,
+        property,
+        value,
+        timestamp: new Date().toISOString(),
+      });
     }
+  }
 
-    for (const [unitId, value] of valueMap.entries()) {
-      cache.set(this.getCacheKey(ip, port, unitId, zone, type), value);
+  private async syncSiblingUnits(
+    device: DeviceRow,
+    siblingUnitIds: number[],
+    sourceUnitId: number,
+    zone: Zone,
+    property: SyncProperty,
+    value: number,
+    service: PolarbearService,
+    connKey: string,
+  ): Promise<void> {
+    for (const targetUnitId of siblingUnitIds) {
+      if (targetUnitId === sourceUnitId) {
+        continue;
+      }
+
+      this.echoGuard?.expectEcho(
+        'panel',
+        device.id,
+        targetUnitId,
+        zone,
+        property,
+        value,
+      );
+
+      await this.enqueueWithGap(connKey, () =>
+        this.writeProperty(service, targetUnitId, zone, property, value),
+      );
+
+      this.lastSeenState.set(
+        createDeviceStateKey('panel', device.id, targetUnitId, zone, property),
+        value,
+      );
+    }
+  }
+
+  private async readSnapshot(
+    service: PolarbearService,
+    connKey: string,
+    unitId: number,
+    zone: Zone,
+  ): Promise<Snapshot> {
+    return {
+      setpoint: await this.enqueueWithGap(connKey, () =>
+        service.getSetpoint(unitId, zone),
+      ),
+      virtualTemperature: await this.enqueueWithGap(connKey, () =>
+        service.getVirtualTemperature(unitId, zone),
+      ),
+      fanSpeed: await this.enqueueWithGap(connKey, () =>
+        service.getFanSpeed(unitId, zone),
+      ),
+      fanMode: await this.enqueueWithGap(connKey, () =>
+        service.getFanMode(unitId, zone),
+      ),
+    };
+  }
+
+  private async writeProperty(
+    service: PolarbearService,
+    unitId: number,
+    zone: Zone,
+    property: SyncProperty,
+    value: number,
+  ): Promise<void> {
+    switch (property) {
+      case 'setpoint':
+        await service.setSetpoint(unitId, zone, value);
+        return;
+      case 'virtualTemperature':
+        await service.setVirtualTemperature(unitId, zone, value);
+        return;
+      case 'fanSpeed':
+        await service.setFanSpeed(unitId, zone, value);
+        return;
+      case 'fanMode':
+        await service.setFanMode(unitId, zone, value);
+        return;
     }
   }
 }

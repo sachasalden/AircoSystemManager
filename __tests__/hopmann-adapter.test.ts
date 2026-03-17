@@ -24,7 +24,7 @@ describe('HopmannAdapter temperature test', () => {
   });
 
   it('should write and read temperature setpoint', async () => {
-    const targetTemperature = 25.5;
+    const targetTemperature = 20.5;
 
     await adapter.setSetpoint(unitId, zone, targetTemperature);
     await new Promise((resolve) => setTimeout(resolve, 1000));

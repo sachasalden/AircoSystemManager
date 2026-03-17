@@ -5,6 +5,11 @@ Het doel van dit onderzoek is om te kijken naar de mogelijkheden van het gebruik
 
 
 
+## OnderzoeksMethoden
+Om dit onderzoek uit te voeren, zal ik gebruik maken van de volgende methoden: 
+1. **Literatuuronderzoek**: Ik zal verschillende bronnen raadplegen, zoals technische documentatie, whitepapers en artikelen over MQTT en vergelijkbare synchronisatiemethoden. Dit zal me helpen om een goed begrip te krijgen van de mogelijkheden en beperkingen van MQTT in de context van het synchroniseren van de units.
+
+
 
 ## Waarom MQTT?
 MQTT biedt verschillende voordelen ten opzichte van traditionele synchronisatiemethoden, zoals het gebruik van een
@@ -25,6 +30,20 @@ Om Mqtt te implementeren in het bestaande systeem, kunnen de volgende stappen wo
 2. **MQTT clients implementeren**: De software van de polarbear units en airco units moet worden aangepast om MQTT clients te bevatten die kunnen communiceren met de MQTT broker. Dit kan worden gedaan met behulp van beschikbare MQTT client libraries voor de gebruikte programmeertalen.
 3. **Berichtstructuur definiëren**: Er moet een duidelijke structuur worden gedefinieerd voor de berichten die worden gepubliceerd en ontvangen, zodat de units correct kunnen interpreteren wat er wordt gecommuniceerd. Dit kan bijvoorbeeld worden gedaan met behulp van JSON of een ander gestructureerd formaat.
 4. **Testen en optimaliseren**: Na implementatie moeten uitgebreide tests worden uitgevoerd om ervoor te zorgen dat de synchronisatie correct werkt en dat de prestaties en betrouwbaarheid voldoen aan de verwachtingen. Op basis van de testresultaten kunnen optimalisaties worden doorgevoerd om de efficiëntie en robuustheid van het systeem te verbeteren.
+
+
+## valkuilen
+1. Backend valt uit, wat gebeurd er met de data? Is er een fallback mechanisme?
+2. De polarbear units zijn niet goed gesynchroniseerd met de airco units.
+3. Er kunnen problemen ontstaan met de betrouwbaarheid van de communicatie tussen de units, vooral als er netwerkproblemen zijn.
+
+## oplossingen
+1. Implementeer een fallback mechanisme voor de backend.
+2. Implementeer een synchronisatiemechanisme tussen de polarbear units en airco units, zoals het gebruik van een centrale database of een peer-to-peer communicatieprotocol.
+3. Verbeter de betrouwbaarheid van de communicatie tussen de units door het gebruik van een robuust communictatieprotocol zoals MQTT.
+
+## Resultaten
+
 
 ## Conclusie
 Het gebruik van MQTT voor het synchroniseren van de polarbear units en airco units biedt verschillende voordelen, zoals een lichtgewicht protocol, een publish-subscribe model, real-time communicatie, betrouwbaarheid en ondersteuning voor verschillende platforms. Door MQTT te implementeren in het bestaande systeem, kan de synchronisatie tussen de units worden verbeterd, waardoor het systeem sneller, betrouwbaarder en minder afhankelijk van de database wordt. Hoewel er enkele uitdagingen kunnen zijn bij de implementatie, zoals het opzetten van een MQTT broker en het definiëren van een berichtstructuur, kunnen deze worden overwonnen door het gebruik van beschikbare tools en libraries, evenals door het uitvoeren van uitgebreide tests en optimalisaties. Al met al biedt MQTT een veelbelovende oplossing voor het verbeteren van de synchronisatie tussen de polarbear units en airco units, waardoor het systeem efficiënter en robuuster wordt.

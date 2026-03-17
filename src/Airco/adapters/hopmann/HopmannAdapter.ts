@@ -8,20 +8,18 @@ const DEVICE_TYPE_B = 'FC-3000DC/FC-3500DC';
 type RegisterType = 'readInput' | 'readHold' | 'writeHold';
 
 export default class HopmannAdapter implements AircoAdapter {
-  private connected = false;
-
   constructor(private connection: AircoConnection) {}
 
   async connect(): Promise<void> {
-    this.connected = true;
+    return Promise.resolve();
   }
 
   async disconnect(): Promise<void> {
-    this.connected = false;
+    return Promise.resolve();
   }
 
   private getDeviceType(): string {
-    return String((this.connection as any)?.type ?? '');
+    return String(this.connection.model ?? this.connection.type ?? '');
   }
 
   private isTypeA(type: string): boolean {
