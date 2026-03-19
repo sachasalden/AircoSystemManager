@@ -1,5 +1,8 @@
 import ModbusClient from '../clients/ModbusClient';
-import { AircopanelRepository, type Device } from '../repositories/WallpanelRepository';
+import {
+  AircopanelRepository,
+  type Device,
+} from '../repositories/WallpanelRepository';
 import type SyncEchoGuard from './SyncEchoGuard';
 import {
   SYNC_PROPERTIES,
@@ -22,8 +25,10 @@ type ConnectionKey = string;
 export default class MonitorPolarbearService {
   private readonly TEST_ZONE_ID = '691ee9f917ddcc79daf9fe84';
   private readonly TEST_ROOM_ID = '2134af85-4377-2330-af2d-72143bec6574';
+
   private timer: NodeJS.Timeout | null = null;
-  private isTickRunning = false;
+  private isStopped = false;
+  private isStarted = false;
   private lastSeenState = new Map<string, number>();
 
   private connections = new Map<
@@ -43,15 +48,63 @@ export default class MonitorPolarbearService {
   ) {}
 
   start(): void {
-    if (this.timer) {
+    if (this.isStarted) {
       return;
     }
 
-    this.timer = setInterval(() => {
-      void this.tickSafe();
-    }, this.pollIntervalMs);
+    this.isStarted = true;
+    this.isStopped = false;
 
     console.log('[MonitorPolarbearService] started');
+    void this.runLoop();
+  }
+
+  async stop(): Promise<void> {
+    this.isStopped = true;
+    this.isStarted = false;
+
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    for (const conn of this.connections.values()) {
+      try {
+        await conn.client.disconnect();
+      } catch (error) {
+        console.error(
+          '[MonitorPolarbearService] failed to disconnect client',
+          error,
+        );
+      }
+    }
+
+    this.connections.clear();
+    this.connQueue.clear();
+
+    console.log('[MonitorPolarbearService] stopped');
+  }
+
+  private async runLoop(): Promise<void> {
+    if (this.isStopped) {
+      this.timer = null;
+      return;
+    }
+
+    try {
+      await this.tick();
+    } catch (error) {
+      console.error('[MonitorPolarbearService] loop failed', error);
+    }
+
+    if (this.isStopped) {
+      this.timer = null;
+      return;
+    }
+
+    this.timer = setTimeout(() => {
+      void this.runLoop();
+    }, this.pollIntervalMs);
   }
 
   async applyRemoteChange(message: SyncMessage): Promise<void> {
@@ -60,6 +113,7 @@ export default class MonitorPolarbearService {
         device.zoneId === this.TEST_ZONE_ID &&
         device.roomId === this.TEST_ROOM_ID,
     );
+
     const targets = devices.filter(
       (device) =>
         device.zoneId === message.zoneId && device.roomId === message.roomId,
@@ -71,35 +125,68 @@ export default class MonitorPolarbearService {
         const conn = await this.ensureConnection(device.ip, device.port);
 
         for (const unitId of this.normalizeUnitIds(device.ids)) {
-          this.echoGuard?.expectEcho(
-            'panel',
-            device.id,
-            unitId,
-            message.zone,
-            message.property,
-            message.value,
-          );
-
-          await this.enqueueWithGap(connKey, () =>
-            this.writeProperty(
-              conn.service,
+          try {
+            console.log('[MonitorPolarbearService] apply write start', {
+              deviceId: device.id,
               unitId,
-              message.zone,
-              message.property,
-              message.value,
-            ),
-          );
+              zone: message.zone,
+              property: message.property,
+              value: message.value,
+              ip: device.ip,
+              port: device.port,
+            });
 
-          this.lastSeenState.set(
-            createDeviceStateKey(
+            this.echoGuard?.expectEcho(
               'panel',
               device.id,
               unitId,
               message.zone,
               message.property,
-            ),
-            message.value,
-          );
+              message.value,
+            );
+
+            await this.enqueueWithGap(connKey, () =>
+              this.writeProperty(
+                conn.service,
+                unitId,
+                message.zone,
+                message.property,
+                message.value,
+              ),
+            );
+
+            this.lastSeenState.set(
+              createDeviceStateKey(
+                'panel',
+                device.id,
+                unitId,
+                message.zone,
+                message.property,
+              ),
+              message.value,
+            );
+
+            console.log('[MonitorPolarbearService] apply write ok', {
+              deviceId: device.id,
+              unitId,
+              zone: message.zone,
+              property: message.property,
+              value: message.value,
+            });
+          } catch (error) {
+            console.error(
+              `[MonitorPolarbearService] failed write on device ${device.id}`,
+              {
+                unitId,
+                zone: message.zone,
+                property: message.property,
+                value: message.value,
+                ip: device.ip,
+                port: device.port,
+              },
+              error,
+            );
+          }
         }
       } catch (error) {
         console.error(
@@ -107,20 +194,6 @@ export default class MonitorPolarbearService {
           error,
         );
       }
-    }
-  }
-
-  private async tickSafe(): Promise<void> {
-    if (this.isTickRunning) {
-      return;
-    }
-
-    this.isTickRunning = true;
-
-    try {
-      await this.tick();
-    } finally {
-      this.isTickRunning = false;
     }
   }
 
@@ -193,21 +266,50 @@ export default class MonitorPolarbearService {
 
         for (const unitId of unitIds) {
           for (const zone of [1, 2] as const) {
-            const snapshot = await this.readSnapshot(
-              conn.service,
-              connKey,
-              unitId,
-              zone,
-            );
-            await this.handleSnapshot(
-              device,
-              unitIds,
-              unitId,
-              zone,
-              snapshot,
-              conn.service,
-              connKey,
-            );
+            try {
+              console.log('[MonitorPolarbearService] poll start', {
+                deviceId: device.id,
+                unitId,
+                zone,
+                ip: device.ip,
+                port: device.port,
+              });
+
+              const snapshot = await this.readSnapshot(
+                conn.service,
+                connKey,
+                unitId,
+                zone,
+              );
+
+              console.log('[MonitorPolarbearService] poll ok', {
+                deviceId: device.id,
+                unitId,
+                zone,
+                snapshot,
+              });
+
+              await this.handleSnapshot(
+                device,
+                unitIds,
+                unitId,
+                zone,
+                snapshot,
+                conn.service,
+                connKey,
+              );
+            } catch (error) {
+              console.error(
+                `[MonitorPolarbearService] failed poll on device ${device.id}`,
+                {
+                  unitId,
+                  zone,
+                  ip: device.ip,
+                  port: device.port,
+                },
+                error,
+              );
+            }
           }
         }
       } catch (error) {
@@ -303,23 +405,61 @@ export default class MonitorPolarbearService {
         continue;
       }
 
-      this.echoGuard?.expectEcho(
-        'panel',
-        device.id,
-        targetUnitId,
-        zone,
-        property,
-        value,
-      );
+      try {
+        console.log('[MonitorPolarbearService] sibling sync start', {
+          deviceId: device.id,
+          sourceUnitId,
+          targetUnitId,
+          zone,
+          property,
+          value,
+        });
 
-      await this.enqueueWithGap(connKey, () =>
-        this.writeProperty(service, targetUnitId, zone, property, value),
-      );
+        this.echoGuard?.expectEcho(
+          'panel',
+          device.id,
+          targetUnitId,
+          zone,
+          property,
+          value,
+        );
 
-      this.lastSeenState.set(
-        createDeviceStateKey('panel', device.id, targetUnitId, zone, property),
-        value,
-      );
+        await this.enqueueWithGap(connKey, () =>
+          this.writeProperty(service, targetUnitId, zone, property, value),
+        );
+
+        this.lastSeenState.set(
+          createDeviceStateKey(
+            'panel',
+            device.id,
+            targetUnitId,
+            zone,
+            property,
+          ),
+          value,
+        );
+
+        console.log('[MonitorPolarbearService] sibling sync ok', {
+          deviceId: device.id,
+          sourceUnitId,
+          targetUnitId,
+          zone,
+          property,
+          value,
+        });
+      } catch (error) {
+        console.error(
+          `[MonitorPolarbearService] failed sibling sync on device ${device.id}`,
+          {
+            sourceUnitId,
+            targetUnitId,
+            zone,
+            property,
+            value,
+          },
+          error,
+        );
+      }
     }
   }
 
@@ -352,6 +492,13 @@ export default class MonitorPolarbearService {
     property: SyncProperty,
     value: number,
   ): Promise<void> {
+    console.log('[MonitorPolarbearService] writeProperty', {
+      unitId,
+      zone,
+      property,
+      value,
+    });
+
     switch (property) {
       case 'setpoint':
         await service.setSetpoint(unitId, zone, value);

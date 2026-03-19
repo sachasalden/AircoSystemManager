@@ -26,7 +26,8 @@ export default class MonitorAircoService {
   private readonly AIRCO_PORT = 502;
 
   private timer: NodeJS.Timeout | null = null;
-  private isTickRunning = false;
+  private isStopped = false;
+  private isStarted = false;
   private lastSeenState = new Map<string, number>();
 
   constructor(
@@ -38,15 +39,49 @@ export default class MonitorAircoService {
   ) {}
 
   start(): void {
-    if (this.timer) {
+    if (this.isStarted) {
       return;
     }
 
-    this.timer = setInterval(() => {
-      void this.tickSafe();
-    }, this.pollIntervalMs);
+    this.isStarted = true;
+    this.isStopped = false;
 
     console.log('[MonitorAircoService] started');
+    void this.runLoop();
+  }
+
+  async stop(): Promise<void> {
+    this.isStopped = true;
+    this.isStarted = false;
+
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    console.log('[MonitorAircoService] stopped');
+  }
+
+  private async runLoop(): Promise<void> {
+    if (this.isStopped) {
+      this.timer = null;
+      return;
+    }
+
+    try {
+      await this.tick();
+    } catch (error) {
+      console.error('[MonitorAircoService] loop failed', error);
+    }
+
+    if (this.isStopped) {
+      this.timer = null;
+      return;
+    }
+
+    this.timer = setTimeout(() => {
+      void this.runLoop();
+    }, this.pollIntervalMs);
   }
 
   async applyRemoteChange(message: SyncMessage): Promise<void> {
@@ -98,20 +133,6 @@ export default class MonitorAircoService {
           error,
         );
       }
-    }
-  }
-
-  private async tickSafe(): Promise<void> {
-    if (this.isTickRunning) {
-      return;
-    }
-
-    this.isTickRunning = true;
-
-    try {
-      await this.tick();
-    } finally {
-      this.isTickRunning = false;
     }
   }
 

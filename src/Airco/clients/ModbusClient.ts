@@ -103,17 +103,16 @@ export default class ModbusClient {
   async readGatewayStatusV2(unitId: number, zone: 1 | 2) {
     this.client.setID(unitId);
 
-    const raw = await this.client.readHoldingRegisters(7001, 47);
-    const data: number[] = Array.isArray(raw) ? raw : (raw as any).data;
-
+    const data = await this.client.readHoldingRegisters(7001, 47);
+    const arr = Array.isArray(data) ? data : (data as any).data;
     const zoneOffset = zone === 1 ? 21 : 34;
 
     return {
-      displayTemp: (data[zoneOffset] & 0x03ff) / 10,
-      wallGroupTemp: (data[zoneOffset + 1] & 0x03ff) / 10,
-      floorGroupTemp: (data[zoneOffset + 2] & 0x03ff) / 10,
-      setpoint: (data[zoneOffset + 3] & 0x03ff) / 10,
-      fanSpeed: data[zoneOffset + 11] & 0x07,
+      displayTemp: (arr[zoneOffset] & 0x03ff) / 10,
+      wallGroupTemp: (arr[zoneOffset + 1] & 0x03ff) / 10,
+      floorGroupTemp: (arr[zoneOffset + 2] & 0x03ff) / 10,
+      setpoint: (arr[zoneOffset + 3] & 0x03ff) / 10,
+      fanSpeed: arr[zoneOffset + 11] & 0x07,
     };
   }
 }

@@ -29,6 +29,7 @@ registerDefaultAdapters(registry);
 
 const echoGuard = new SyncEchoGuard();
 const mqttBridge = new MqttBridgeService(mqttBrokerUrl, mqttTopicPrefix);
+
 const monitorService = new MonitorPolarbearService(
   repository,
   (message) => mqttBridge.publishPanelChange(message),
@@ -37,6 +38,7 @@ const monitorService = new MonitorPolarbearService(
   10000,
   20,
 );
+
 const aircoMonitorService = new MonitorAircoService(
   repository,
   registry,
@@ -59,8 +61,34 @@ async function startSyncServices() {
   aircoMonitorService.start();
 }
 
+async function shutdown(signal: string) {
+  console.log(`[main] received ${signal}, shutting down...`);
+
+  try {
+    await monitorService.stop();
+  } catch (error) {
+    console.error('[main] failed to stop MonitorPolarbearService', error);
+  }
+
+  try {
+    await aircoMonitorService.stop();
+  } catch (error) {
+    console.error('[main] failed to stop MonitorAircoService', error);
+  }
+
+  process.exit(0);
+}
+
 void startSyncServices().catch((error) => {
   console.error('[main] failed to start sync services', error);
+});
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
 });
 
 app.get('/devices', async (_req, res) => {
