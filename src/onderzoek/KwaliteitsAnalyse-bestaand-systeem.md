@@ -1,9 +1,9 @@
 # Analyse: relevante kwaliteitsaspecten (Beschikbaarheid, Performance, Security)
 
 ## Scope en context
-Deze analyse richt zich op de **domotics airco–integraties** en **wall panel/thermostaat (Polarbear)** logica binnen de backend. De modules communiceren met fysieke apparaten via o.a. **TCP sockets**, **Modbus (TCP/RTU)** en in één geval via **HTTP-calls naar een lokale/remote service**.
+Deze analyse richt zich op de **domotics airco–integraties** en **wall panel/thermostaat (Polarbear)** logica binnen de backend. De modules communiceren met fysieke apparaten via  **TCP sockets**, **Modbus (TCP/RTU)** en in één geval via **HTTP-calls naar een lokale/remote service**.
 
-Belangrijke eigenschap van dit domein: het is **I/O-gedreven** (netwerk + hardware), met vaak **trage of onbetrouwbare endpoints**. Daardoor worden beschikbaarheid, timeouts, retries, backoff, en resource-beheer dominante kwaliteitsfactoren.
+Belangrijke eigenschap van dit domein: het is netwerk + hardware, met vaak **trage of onbetrouwbare endpoints**. Daardoor worden beschikbaarheid, timeouts, retries en resource-beheer belangrijke kwaliteitsfactoren.
 
 ## Gebruikte analysemethoden en standaarden
 
