@@ -16,7 +16,6 @@ const registersV1 = Object.freeze({
 
 const registersV2 = Object.freeze({
   DeviceType: 7001,
-  NumberOfZones: 7012,
   Zone1DisplayTemp: 21051,
   Zone2DisplayTemp: 22051,
 });
@@ -39,7 +38,7 @@ const flagBits: Record<FlagType, Record<Zone, number>> = Object.freeze({
 });
 
 export default class PolarbearService {
-  private detectedVersion: 'v1' | 'v2' | null = null;
+  private detectedVersions = new Map<number, 'v1' | 'v2'>();
 
   constructor(private client: ModbusClient) {}
 
@@ -52,70 +51,20 @@ export default class PolarbearService {
   }
 
   private async detectVersion(unitId: number): Promise<'v1' | 'v2'> {
-    if (this.detectedVersion) {
-      return this.detectedVersion;
+    const cached = this.detectedVersions.get(unitId);
+
+    if (cached) {
+      return cached;
     }
 
     try {
       this.client.setID(unitId);
       await this.client.readHoldingRegisters(registersV2.DeviceType, 1);
-      this.detectedVersion = 'v2';
+      this.detectedVersions.set(unitId, 'v2');
       return 'v2';
     } catch {
-      this.detectedVersion = 'v1';
+      this.detectedVersions.set(unitId, 'v1');
       return 'v1';
-    }
-  }
-
-  private async updateFlagBit(
-    unitId: number,
-    zone: Zone,
-    type: FlagType,
-    enabled: boolean,
-    currentFlags?: number,
-  ): Promise<void> {
-    const bit = this.getFlagBit(zone, type);
-    this.client.setID(unitId);
-
-    try {
-      if (enabled) {
-        await this.client.maskWriteRegister(
-          inputs.FlagReg0,
-          0xffff,
-          (1 << bit) & 0xffff,
-        );
-      } else {
-        await this.client.maskWriteRegister(
-          inputs.FlagReg0,
-          ~(1 << bit) & 0xffff,
-          0x0000,
-        );
-      }
-    } catch {
-      const flags = currentFlags ?? (await this.getFlags(unitId));
-      const nextValue = enabled ? flags | (1 << bit) : flags & ~(1 << bit);
-
-      if (nextValue === flags) {
-        return;
-      }
-
-      this.client.setID(unitId);
-      await this.client.writeRegister(inputs.FlagReg0, nextValue);
-    }
-  }
-
-  async getDeviceType(unitId: number): Promise<number | undefined> {
-    this.client.setID(unitId);
-
-    try {
-      const res = await this.client.readHoldingRegisters(
-        registersV2.DeviceType,
-        1,
-      );
-      const arr = Array.isArray(res) ? res : (res as any).data;
-      return arr[0];
-    } catch {
-      return undefined;
     }
   }
 
@@ -137,11 +86,10 @@ export default class PolarbearService {
   ): Promise<void> {
     this.client.setID(unitId);
 
-    const value = Math.round(temperature * 10);
     const register =
       zone === 1 ? registersV1.Zone1Setpoint : registersV1.Zone2Setpoint;
 
-    await this.client.writeRegister(register, value);
+    await this.client.writeRegister(register, Math.round(temperature * 10));
   }
 
   async getVirtualTemperature(unitId: number, zone: Zone): Promise<number> {
@@ -176,7 +124,6 @@ export default class PolarbearService {
   ): Promise<void> {
     const version = await this.detectVersion(unitId);
     this.client.setID(unitId);
-
     const rawTemp = Math.round(temperature * 10);
 
     if (version === 'v2') {
@@ -185,8 +132,6 @@ export default class PolarbearService {
           ? registersV2.Zone1DisplayTemp
           : registersV2.Zone2DisplayTemp;
 
-      // Zelfde idee als je oude code voor nieuwe virtual temp registers:
-      // alleen de temperatuur-bits overschrijven, rest behouden.
       const currentData = await this.client.readHoldingRegisters(register, 1);
       const arr = Array.isArray(currentData)
         ? currentData
@@ -217,6 +162,15 @@ export default class PolarbearService {
     return arr[0];
   }
 
+  async setFanSpeed(unitId: number, zone: Zone, speed: number): Promise<void> {
+    this.client.setID(unitId);
+
+    const register =
+      zone === 1 ? registersV1.Zone1FanSpeed : registersV1.Zone2FanSpeed;
+
+    await this.client.writeRegister(register, speed);
+  }
+
   async getFanMode(unitId: number, zone: Zone): Promise<number> {
     this.client.setID(unitId);
 
@@ -227,15 +181,6 @@ export default class PolarbearService {
     const arr = Array.isArray(result) ? result : (result as any).data;
 
     return arr[0];
-  }
-
-  async setFanSpeed(unitId: number, zone: Zone, speed: number): Promise<void> {
-    this.client.setID(unitId);
-
-    const register =
-      zone === 1 ? registersV1.Zone1FanSpeed : registersV1.Zone2FanSpeed;
-
-    await this.client.writeRegister(register, speed);
   }
 
   async setFanMode(unitId: number, zone: Zone, mode: number): Promise<void> {
@@ -254,9 +199,21 @@ export default class PolarbearService {
     return arr[0];
   }
 
-  isFlagSet(flags: number, zone: Zone, type: FlagType): boolean {
+  async setFlag(
+    unitId: number,
+    zone: Zone,
+    type: FlagType,
+    currentFlags?: number,
+  ): Promise<void> {
     const bit = this.getFlagBit(zone, type);
-    return (flags & (1 << bit)) !== 0;
+    this.client.setID(unitId);
+
+    const flags = currentFlags ?? (await this.getFlags(unitId));
+    const nextValue = flags | (1 << bit);
+
+    if (nextValue !== flags) {
+      await this.client.writeRegister(inputs.FlagReg0, nextValue);
+    }
   }
 
   async clearFlag(
@@ -265,16 +222,15 @@ export default class PolarbearService {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    await this.updateFlagBit(unitId, zone, type, false, currentFlags);
-  }
+    const bit = this.getFlagBit(zone, type);
+    this.client.setID(unitId);
 
-  async setFlag(
-    unitId: number,
-    zone: Zone,
-    type: FlagType,
-    currentFlags?: number,
-  ): Promise<void> {
-    await this.updateFlagBit(unitId, zone, type, true, currentFlags);
+    const flags = currentFlags ?? (await this.getFlags(unitId));
+    const nextValue = flags & ~(1 << bit);
+
+    if (nextValue !== flags) {
+      await this.client.writeRegister(inputs.FlagReg0, nextValue);
+    }
   }
 
   async getPendingSetpoint(unitId: number, zone: Zone): Promise<number> {

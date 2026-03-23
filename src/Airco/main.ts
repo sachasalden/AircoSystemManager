@@ -1,15 +1,22 @@
-import 'dotenv/config';
+import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config({
+  path: path.resolve(process.cwd(), '.env'),
+});
+
+console.log('[main] cwd =', process.cwd());
+console.log('[main] TEST_ZONE_ID =', process.env.TEST_ZONE_ID);
+console.log('[main] TEST_ROOM_ID =', process.env.TEST_ROOM_ID);
+
 import express from 'express';
 import cors from 'cors';
 
 import AdapterRegistry from './adapters/AdapterRegistry';
 import { registerDefaultAdapters } from './adapters/registerAdapters';
 import PolarbearController from './controllers/PolarbearController';
-import MonitorAircoService from './services/MonitorAircoService';
-import MonitorPolarbearService from './services/MonitorPolarbearService';
 import DeviceService from './services/DeviceService';
-import MqttBridgeService from './services/MqttBridgeService';
-import SyncEchoGuard from './services/SyncEchoGuard';
+import SyncMainLoop from './services/SyncMainLoop';
 import { AircopanelRepository } from './repositories/WallpanelRepository';
 
 const app = express();
@@ -20,67 +27,48 @@ app.use(express.json());
 const mongoUri = process.env.MONGODB_URI || 'mongodb://192.168.55.10:27017';
 const mqttBrokerUrl = process.env.MQTT_BROKER || 'mqtt://192.168.55.10';
 const mqttTopicPrefix = process.env.MQTT_TOPIC_PREFIX || 'airco/sync';
+const sourceInstanceId =
+  process.env.SYNC_INSTANCE_ID ||
+  `${process.env.HOSTNAME || 'node'}-${process.pid}`;
 
 const repository = new AircopanelRepository(mongoUri);
 const controller = new PolarbearController(2000, repository);
 const deviceService = new DeviceService(repository);
+
 const registry = new AdapterRegistry();
 registerDefaultAdapters(registry);
 
-const echoGuard = new SyncEchoGuard();
-const mqttBridge = new MqttBridgeService(mqttBrokerUrl, mqttTopicPrefix);
-
-const monitorService = new MonitorPolarbearService(
-  repository,
-  (message) => mqttBridge.publishPanelChange(message),
-  echoGuard,
-  1000,
-  10000,
-  20,
-);
-
-const aircoMonitorService = new MonitorAircoService(
+const syncMainLoop = new SyncMainLoop(
   repository,
   registry,
-  (message) => mqttBridge.publishAircoChange(message),
-  echoGuard,
-  1000,
+  mqttBrokerUrl,
+  mqttTopicPrefix,
+  sourceInstanceId,
 );
 
-async function startSyncServices() {
-  await mqttBridge.start({
-    onPanelMessage: async (message) => {
-      await aircoMonitorService.applyRemoteChange(message);
-    },
-    onAircoMessage: async (message) => {
-      await monitorService.applyRemoteChange(message);
-    },
-  });
+async function start(): Promise<void> {
+  await syncMainLoop.start();
 
-  monitorService.start();
-  aircoMonitorService.start();
+  const port = Number(process.env.PORT || 3000);
+  app.listen(port, () => {
+    console.log(`API server running on port ${port}`);
+  });
 }
 
-async function shutdown(signal: string) {
-  console.log(`[main] received ${signal}, shutting down...`);
+async function shutdown(signal: string): Promise<void> {
+  console.log(`[main] received ${signal}, shutting down`);
 
   try {
-    await monitorService.stop();
+    await syncMainLoop.stop();
   } catch (error) {
-    console.error('[main] failed to stop MonitorPolarbearService', error);
-  }
-
-  try {
-    await aircoMonitorService.stop();
-  } catch (error) {
-    console.error('[main] failed to stop MonitorAircoService', error);
+    console.error('[main] stop failed', error);
   }
 
   process.exit(0);
 }
 
-void startSyncServices().catch((error) => {
-  console.error('[main] failed to start sync services', error);
+void start().catch((error) => {
+  console.error('[main] startup failed', error);
 });
 
 process.on('SIGINT', () => {
@@ -158,9 +146,4 @@ app.put('/devices/:id', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`API server running on port ${port}`);
 });
