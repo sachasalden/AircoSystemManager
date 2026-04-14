@@ -1,26 +1,30 @@
-# Onderzoek MQTT
+# 1. Inleiding
 
-## Inleiding
-Binnen het huidige systeem is er een vraagstuk rondom het synchroniseren van de polarbear units en de airco units. Op dit moment is het belangrijk dat wijzigingen in status of gegevens betrouwbaar en snel tussen deze onderdelen worden gedeeld. Een mogelijke oplossing hiervoor is het gebruik van MQTT.
+## 1.1. Aanleiding
+Binnen het huidige systeem is er een vraagstuk rondom het synchroniseren van de polarbear units en de airco units. Op dit moment is het belangrijk dat wijzigingen in status of gegevens betrouwbaar en snel tussen deze onderdelen worden gedeeld. Wanneer deze synchronisatie niet goed verloopt, kan dat leiden tot inconsistente data, verouderde statussen of fouten in de aansturing.
 
-MQTT is een lichtgewicht publish-subscribe protocol dat veel wordt gebruikt binnen IoT-toepassingen. In dit onderzoek bekijk ik of MQTT geschikt is om de synchronisatie tussen de polarbear units en de airco units te verbeteren. Daarbij onderzoek ik niet alleen de voordelen van MQTT, maar ook welke aandachtspunten, risico’s en randvoorwaarden er zijn voor toepassing binnen het bestaande systeem.
+Een mogelijke oplossing hiervoor is het gebruik van MQTT. MQTT is een lichtgewicht publish-subscribe protocol dat veel wordt gebruikt binnen IoT-toepassingen. Omdat de polarbear units en airco units ook met elkaar moeten communiceren en onderling wijzigingen moeten delen, is het relevant om te onderzoeken of MQTT hierbij een geschikte oplossing kan zijn.
 
 Dit onderzoek sluit aan op mijn stagedoel rondom onderzoekend vermogen, omdat ik niet direct uitga van een oplossing, maar eerst het probleem afbaken, ontbrekende kennis in beeld breng, onderzoek uitvoer en op basis daarvan tot een onderbouwd voorstel kom.
 
-## Vraagstelling
-De centrale vraag binnen dit onderzoek is:
+## 1.2. Doelstelling
+Het doel van dit onderzoek is om te bepalen in hoeverre MQTT een geschikte oplossing is voor het synchroniseren van de polarbear units en de airco units binnen het bestaande systeem. Daarbij wordt gekeken naar de werking van MQTT, de relevante eigenschappen van het protocol, de mogelijke voordelen, risico’s en randvoorwaarden, en de manier waarop MQTT binnen het huidige systeem toegepast zou kunnen worden.
+
+De uitkomst van dit onderzoek is een onderbouwd advies over de toepasbaarheid van MQTT voor dit synchronisatievraagstuk, met aandacht voor zowel de technische kansen als de mogelijke beperkingen.
+
+# 2. Hoofdvraag
 
 **In hoeverre is MQTT een geschikte oplossing voor het synchroniseren van de polarbear units en de airco units binnen het bestaande systeem?**
 
-Om deze vraag te beantwoorden, kijk ik naar de volgende deelvragen:
-- Wat is het huidige synchronisatieprobleem tussen de polarbear units en de airco units?
-- Welke eisen zijn belangrijk voor een goede synchronisatie, zoals snelheid, betrouwbaarheid en schaalbaarheid?
-- Hoe werkt MQTT en welke eigenschappen maken het geschikt of minder geschikt voor dit vraagstuk?
-- Welke risico’s en valkuilen brengt het gebruik van MQTT met zich mee?
-- Hoe zou MQTT binnen het bestaande systeem geïmplementeerd kunnen worden?
+# 3. Deelvragen
 
-## Methodische probleemaanpak
-Voordat ik een oplossing kies, breng ik eerst het vraagstuk in beeld. Het probleem is dat de polarbear units en airco units goed met elkaar gesynchroniseerd moeten blijven. Wanneer deze synchronisatie niet goed verloopt, kan dat leiden tot inconsistente data, verouderde statussen of fouten in de aansturing.
+## 3.1. Wat is het huidige synchronisatieprobleem tussen de polarbear units en de airco units?
+
+### 3.1.1. Methoden
+Voor deze deelvraag is gebruikgemaakt van een literatuuronderzoek, aangevuld met een analyse van het bestaande probleem binnen de systeemcontext.
+
+### 3.1.2. Resultaten
+Het huidige probleem is dat de polarbear units en airco units goed met elkaar gesynchroniseerd moeten blijven. Wanneer deze synchronisatie niet goed verloopt, kan dat leiden tot inconsistente data, verouderde statussen of fouten in de aansturing.
 
 Om dit vraagstuk goed te onderzoeken, moet eerst duidelijk zijn:
 - hoe de synchronisatie nu verloopt
@@ -34,81 +38,125 @@ De ontbrekende kennis zit vooral in:
 - de manier waarop MQTT geïntegreerd kan worden in het bestaande systeem
 - de mogelijke gevolgen voor backend, data-opslag en foutafhandeling
 
-Om tot inzicht te komen, kies ik voor een **literatuuronderzoek**. Daarmee kan ik op een gestructureerde manier documentatie en andere bronnen raadplegen over MQTT, de werking ervan, de betrouwbaarheid, de voor- en nadelen en de toepasbaarheid binnen IoT-achtige systemen.
+## 3.2. Welke eisen zijn belangrijk voor een goede synchronisatie, zoals snelheid, betrouwbaarheid en schaalbaarheid?
 
-## Onderzoeksmethode
-Voor dit onderzoek gebruik ik de methode **literatuuronderzoek**.
+### 3.2.1. Methoden
+Voor deze deelvraag is gebruikgemaakt van literatuuronderzoek, waarbij is gekeken naar algemene eisen die gelden voor communicatie en synchronisatie tussen meerdere apparaten binnen een systeem.
 
-Ik raadpleeg technische documentatie, artikelen, whitepapers en andere relevante bronnen over MQTT en vergelijkbare manieren van synchroniseren. Deze methode past bij dit vraagstuk, omdat ik eerst theoretisch wil onderbouwen wat MQTT precies biedt en of dit aansluit bij de eisen van het systeem.
+### 3.2.2. Resultaten
+Voor een goede synchronisatie tussen de polarbear units en de airco units zijn meerdere eisen van belang.
 
-Bij het uitvoeren van dit onderzoek let ik kritisch op:
-- welke voordelen MQTT in theorie biedt
-- welke beperkingen of risico’s genoemd worden
-- of de bronnen passen bij systemen waarin meerdere apparaten met elkaar moeten synchroniseren
-- welke inzichten direct toepasbaar zijn binnen de context van de polarbear units en airco units
+**Snelheid** is belangrijk, omdat statuswijzigingen zo snel mogelijk moeten worden doorgegeven aan andere onderdelen van het systeem.
 
-Hierdoor voer ik het onderzoek niet alleen beschrijvend uit, maar ook kritisch en onderbouwd.
+**Betrouwbaarheid** is essentieel, omdat belangrijke berichten niet verloren mogen gaan. Wanneer een wijziging niet aankomt, kan dit zorgen voor inconsistente statussen of foutieve aansturing.
 
-## Analyse: waarom MQTT?
-MQTT heeft eigenschappen die mogelijk goed aansluiten op het synchronisatievraagstuk.
+**Schaalbaarheid** speelt ook een rol. De oplossing moet niet alleen werken voor een klein aantal units, maar ook bruikbaar blijven wanneer meerdere apparaten tegelijk gegevens uitwisselen.
 
-### 1. Lichtgewicht protocol
-MQTT is ontworpen voor situaties waarin apparaten efficiënt moeten communiceren met beperkte belasting. Dit maakt het geschikt voor omgevingen waarin apparaten niet onnodig zwaar belast mogen worden.
+Daarnaast is het belangrijk dat de oplossing goed kan omgaan met:
+- netwerkproblemen
+- tijdelijke uitval van apparaten
+- herstel na onderbrekingen
+- consistente verwerking van ontvangen gegevens
 
-### 2. Publish-subscribe model
-Bij MQTT communiceren apparaten niet direct met elkaar, maar via een broker. Hierdoor ontstaat minder onderlinge afhankelijkheid tussen units. Dit kan de architectuur overzichtelijker maken en maakt het eenvoudiger om meerdere units tegelijk te laten meeluisteren naar veranderingen.
+## 3.3. Hoe werkt MQTT en welke eigenschappen maken het geschikt of minder geschikt voor dit vraagstuk?
 
-### 3. Real-time communicatie
-Wanneer een unit een wijziging publiceert op een topic, kunnen andere geabonneerde units deze wijziging vrijwel direct ontvangen. Dit maakt snellere synchronisatie mogelijk dan wanneer gegevens alleen via periodieke database-updates worden verwerkt.
+### 3.3.1. Methoden
+Voor deze deelvraag is gebruikgemaakt van literatuuronderzoek naar de werking van MQTT en de eigenschappen van het protocol binnen IoT-achtige systemen.
 
-### 4. Betrouwbaarheid
-MQTT ondersteunt verschillende Quality of Service-niveaus (QoS). Daarmee kan worden bepaald hoe belangrijk het is dat een bericht zeker aankomt. Dit is relevant voor synchronisatie, omdat sommige berichten niet verloren mogen gaan.
+### 3.3.2. Resultaten
+MQTT is een lichtgewicht publish-subscribe protocol dat veel wordt gebruikt binnen IoT-toepassingen. Het werkt met een broker, publishers en subscribers.
 
-### 5. Integratie in verschillende omgevingen
-MQTT wordt breed ondersteund en is beschikbaar voor veel programmeertalen en platformen. Daardoor is het in principe goed te integreren in een bestaand systeem.
+Bij MQTT communiceren apparaten niet direct met elkaar, maar via een broker. Een apparaat kan een bericht publiceren op een bepaald topic. Andere apparaten die op dat topic geabonneerd zijn, ontvangen dit bericht vervolgens vrijwel direct.
 
-## Hoe werkt MQTT binnen dit vraagstuk?
-MQTT werkt met een broker, publishers en subscribers. In deze situatie zouden de polarbear units en airco units berichten kunnen publiceren en ontvangen via een of meerdere topics.
+Binnen dit vraagstuk betekent dit bijvoorbeeld dat:
+- een polarbear unit een statuswijziging publiceert op een topic
+- de broker dit bericht ontvangt
+- alle airco units of andere onderdelen die op dit topic zijn geabonneerd, deze wijziging ontvangen
+- deze units vervolgens hun eigen status of gedrag aanpassen
 
-Bijvoorbeeld:
-- een polarbear unit publiceert een statuswijziging op een topic
-- de broker ontvangt dit bericht
-- alle airco units of andere onderdelen die op dit topic zijn geabonneerd, ontvangen de wijziging
-- deze units kunnen vervolgens hun eigen status of gedrag aanpassen
+Eigenschappen van MQTT die het protocol geschikt maken voor dit vraagstuk zijn:
 
-Hierdoor ontstaat een model waarbij veranderingen centraal verspreid worden, zonder dat iedere unit rechtstreeks met alle andere units hoeft te communiceren.
+### Lichtgewicht protocol
+MQTT is ontworpen voor efficiënte communicatie met beperkte belasting. Dit maakt het geschikt voor omgevingen waarin apparaten niet onnodig zwaar belast mogen worden.
 
+### Publish-subscribe model
+Door het gebruik van een broker hoeven apparaten niet rechtstreeks met elkaar te communiceren. Dit vermindert de onderlinge afhankelijkheid tussen units en maakt de architectuur overzichtelijker.
 
-## Mogelijke oplossing en toepassing binnen het systeem
-Op basis van dit onderzoek lijkt MQTT een kansrijke oplossing voor het synchroniseren van de polarbear units en airco units, mits rekening wordt gehouden met de genoemde aandachtspunten.
+### Real-time communicatie
+Berichten kunnen vrijwel direct worden doorgestuurd naar geabonneerde apparaten. Hierdoor kan synchronisatie sneller plaatsvinden dan bij periodieke updates.
 
-Een mogelijke toepassing binnen het bestaande systeem bestaat uit de volgende onderdelen:
+### Betrouwbaarheid
+MQTT ondersteunt verschillende Quality of Service-niveaus (QoS). Hiermee kan worden bepaald hoe belangrijk het is dat een bericht zeker aankomt.
 
-### 1. MQTT-broker opzetten
+### Integratie
+MQTT wordt breed ondersteund in verschillende programmeertalen en platformen. Daardoor is het in principe goed te integreren in een bestaand systeem.
+
+Minder geschikte kanten van MQTT zijn dat het protocol niet automatisch alle synchronisatieproblemen oplost. De kwaliteit van de oplossing hangt sterk af van de manier waarop MQTT wordt ingericht en geïmplementeerd.
+
+## 3.4. Welke risico’s en valkuilen brengt het gebruik van MQTT met zich mee?
+
+### 3.4.1. Methoden
+Voor deze deelvraag is gebruikgemaakt van literatuuronderzoek naar de betrouwbaarheid van MQTT, met name in situaties van netwerkproblemen, uitval en foutafhandeling.
+
+### 3.4.2. Resultaten
+Hoewel MQTT veel voordelen biedt, zijn er ook belangrijke risico’s en aandachtspunten.
+
+Een belangrijk risico is de **uitval van de broker**. Omdat de communicatie via een broker verloopt, vormt deze een centraal onderdeel van het systeem. Wanneer de broker niet beschikbaar is, kan communicatie tussen units tijdelijk stilvallen.
+
+Daarnaast kunnen **netwerkstoringen** leiden tot vertraagde of gemiste berichten. Daarom moet goed worden nagedacht over reconnect-logica en herstelmechanismen.
+
+Ook de **berichtbetrouwbaarheid** vraagt aandacht. Niet ieder bericht heeft dezelfde prioriteit. Voor sommige berichten is het acceptabel als ze een keer niet aankomen, maar voor andere berichten kan dat grote gevolgen hebben voor de synchronisatie.
+
+Andere belangrijke aandachtspunten zijn:
+- de keuze van het juiste QoS-niveau
+- het gebruik van retained messages
+- de manier waarop units herstellen na tijdelijke onderbrekingen
+- het voorkomen van inconsistente statussen
+- foutafhandeling binnen backend en gekoppelde onderdelen
+
+Uit het onderzoek blijkt daarmee dat MQTT voordelen biedt, maar alleen goed werkt wanneer deze risico’s expliciet worden meegenomen in het ontwerp.
+
+## 3.5. Hoe zou MQTT binnen het bestaande systeem geïmplementeerd kunnen worden?
+
+### 3.5.1. Methoden
+Voor deze deelvraag is gebruikgemaakt van literatuuronderzoek en een verkenning van hoe MQTT technisch toegepast zou kunnen worden binnen het huidige systeem.
+
+### 3.5.2. Resultaten
+Een mogelijke toepassing van MQTT binnen het bestaande systeem bestaat uit de volgende onderdelen.
+
+### MQTT-broker opzetten
 Er moet een broker worden gekozen en ingericht, bijvoorbeeld Mosquitto of EMQX, die de communicatie tussen de units afhandelt.
 
-### 2. MQTT-clients toevoegen
+### MQTT-clients toevoegen
 De software van de polarbear units en airco units moet worden uitgebreid met MQTT-clients, zodat zij berichten kunnen publiceren en ontvangen.
 
-### 3. Berichtstructuur definiëren
+### Berichtstructuur definiëren
 Er moet een duidelijke en consistente structuur worden afgesproken voor de inhoud van berichten, bijvoorbeeld in JSON-formaat. Daarbij moet vastliggen welke gegevens worden verstuurd en hoe andere units die interpreteren.
 
-### 4. Betrouwbaarheid inbouwen
+### Betrouwbaarheid inbouwen
 Om de kans op synchronisatieproblemen te verkleinen, moet worden gekeken naar QoS-instellingen, retained messages, reconnect-logica en mogelijke fallback-mechanismen.
 
-### 5. Testen in de praktijk
+### Testen in de praktijk
 Na de implementatie moet getest worden of de synchronisatie daadwerkelijk sneller, betrouwbaarder en minder foutgevoelig verloopt dan in de huidige situatie.
 
-## Resultaten
-Uit het literatuuronderzoek blijkt dat MQTT verschillende eigenschappen heeft die goed aansluiten bij het synchroniseren van apparaten binnen een systeem. Vooral het lichtgewicht karakter, het publish-subscribe model en de ondersteuning voor real-time communicatie maken MQTT geschikt voor dit type vraagstuk.
+### Implementatie in het huidige systeem
+Een belangrijke vervolgvraag is of MQTT het huidige pollen volledig kan vervangen. Dat hangt af van de mogelijkheden van de wallpanels en de airco’s zelf. Wanneer deze apparaten actief statusupdates kunnen publiceren, kan polling mogelijk grotendeels of volledig worden verminderd. Als bepaalde gegevens alleen via polling beschikbaar blijven, zal waarschijnlijk een hybride oplossing nodig zijn waarbij MQTT en polling naast elkaar bestaan.
 
-Tegelijkertijd laat het onderzoek zien dat MQTT niet automatisch alle problemen oplost. Er moet expliciet aandacht zijn voor uitval van de broker, netwerkstoringen, berichtbetrouwbaarheid en de manier waarop units herstellen na tijdelijke onderbrekingen. Ook moet goed worden nagedacht over de inrichting van topics en berichtstructuren.
+# 4. Conclusie
 
-Het onderzoek laat daarmee zien dat MQTT niet alleen voordelen biedt, maar dat de kwaliteit van de uiteindelijke oplossing sterk afhangt van de manier waarop het wordt geïmplementeerd.
+Op basis van dit onderzoek kan worden geconcludeerd dat MQTT een geschikte en veelbelovende oplossing kan zijn voor het synchroniseren van de polarbear units en de airco units binnen het bestaande systeem. MQTT sluit goed aan bij de behoefte aan efficiënte, schaalbare en snelle communicatie tussen meerdere apparaten.
 
-## Conclusie
-Op basis van dit onderzoek concludeer ik dat MQTT een geschikte en veelbelovende oplossing kan zijn voor het synchroniseren van de polarbear units en airco units binnen het bestaande systeem. MQTT sluit goed aan bij de behoefte aan efficiënte, schaalbare en snelle communicatie tussen meerdere apparaten.
+Vooral het lichtgewicht karakter, het publish-subscribe model en de ondersteuning voor real-time communicatie maken MQTT geschikt voor dit type vraagstuk. Daarnaast biedt MQTT mogelijkheden om de betrouwbaarheid van berichten te verbeteren door middel van QoS-niveaus en aanvullende instellingen.
 
-Tegelijkertijd blijkt uit het onderzoek dat een succesvolle toepassing van MQTT afhangt van een zorgvuldige implementatie. Met name de betrouwbaarheid bij netwerkproblemen, het omgaan met uitval en het waarborgen van consistente synchronisatie zijn belangrijke aandachtspunten.
+Tegelijkertijd blijkt uit het onderzoek dat MQTT niet automatisch alle synchronisatieproblemen oplost. Een succesvolle toepassing hangt af van een zorgvuldige implementatie, waarbij rekening wordt gehouden met broker-uitval, netwerkstoringen, berichtbetrouwbaarheid, foutafhandeling en herstel na onderbrekingen.
 
-Daarom is MQTT niet alleen interessant als technisch protocol, maar vooral als oplossing wanneer het bewust en onderbouwd wordt toegepast binnen de context van het systeem. Op basis van de onderzochte informatie kan ik voorstellen om MQTT verder uit te werken in een prototype of proof-of-concept, zodat in de praktijk getest kan worden hoe goed deze oplossing werkt voor de synchronisatie tussen de units.
+Daarom kan MQTT worden gezien als een kansrijke oplossing, mits deze bewust en goed onderbouwd wordt toegepast binnen de context van het huidige systeem. Op basis van deze bevindingen is het logisch om MQTT verder uit te werken in een prototype of proof-of-concept, zodat in de praktijk getest kan worden hoe goed deze oplossing werkt voor de synchronisatie tussen de units.
+
+# 5. Bronnen
+
+Hier kun je straks je gebruikte bronnen onder zetten, bijvoorbeeld:
+- documentatie over MQTT
+- artikelen of whitepapers over publish-subscribe architecturen
+- informatie over Mosquitto, EMQX of andere brokers
+- bronnen over betrouwbaarheid, QoS en retained messages
+
