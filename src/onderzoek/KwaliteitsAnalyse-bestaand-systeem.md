@@ -1,170 +1,182 @@
-# Analyse: relevante kwaliteitsaspecten (Beschikbaarheid, Performance, Security)
+# 1. Inleiding
 
-## Scope en context
-Deze analyse richt zich op de **domotics airco–integraties** en **wall panel/thermostaat (Polarbear)** logica binnen de backend. De modules communiceren met fysieke apparaten via  **TCP sockets**, **Modbus (TCP/RTU)** en in één geval via **HTTP-calls naar een lokale/remote service**.
+## 1.1. Aanleiding
+Binnen de backend spelen de domotics airco-integraties en de wall panel/thermostaatlogica (Polarbear) een belangrijke rol. Deze modules communiceren met fysieke apparaten via TCP sockets, Modbus (TCP/RTU) en in één geval via HTTP-calls naar een lokale of remote service.
 
-Belangrijke eigenschap van dit domein: het is netwerk + hardware, met vaak **trage of onbetrouwbare endpoints**. Daardoor worden beschikbaarheid, timeouts, retries en resource-beheer belangrijke kwaliteitsfactoren.
+Een belangrijk kenmerk van dit domein is dat het gaat om communicatie met netwerk- en hardwarecomponenten die vaak traag of onbetrouwbaar kunnen zijn. Daardoor ontstaan risico’s op het gebied van beschikbaarheid, performance en security. Denk hierbij aan timeouts, verbindingsproblemen, retries, resource-beheer en beperkte transportbeveiliging.
 
-## Gebruikte analysemethoden en standaarden
+Deze analyse is uitgevoerd om inzicht te krijgen in de belangrijkste kwaliteitsrisico’s binnen deze onderdelen van de backend, zodat gerichte verbeteringen kunnen worden voorgesteld.
 
-Voor deze kwaliteitsanalyse is een combinatie gebruikt van documentanalyse, statische code-inspectie en architectuur-/risico-analyse.
+## 1.2. Doelstelling
+Het doel van deze analyse is om de relevante kwaliteitsaspecten binnen de domotics airco-integraties en de Polarbear-logica in kaart te brengen. Daarbij ligt de focus op drie kwaliteitskenmerken: beschikbaarheid, performance en security.
 
-### Analysemethoden
+De uitkomst van deze analyse is een onderbouwd overzicht van sterke punten, risico’s en concrete aanbevelingen, zodat de backend stabieler, efficiënter en veiliger kan worden ingericht.
+
+# 2. Centrale vraag
+
+**Welke risico’s en verbeterpunten zijn binnen de domotics airco-integraties en Polarbear-logica het meest relevant op het gebied van beschikbaarheid, performance en security?**
+
+# 3. Analyseonderdelen
+
+## 3.1. Welke analysemethoden en referentiekaders zijn gebruikt?
+
+### 3.1.1. Methoden
+Voor deze kwaliteitsanalyse is gebruikgemaakt van een combinatie van documentanalyse, statische code-inspectie, architectuur- en ketenanalyse en risicogerichte kwaliteitsanalyse.
+
+De volgende methoden zijn toegepast:
+
 - **Documentanalyse**
-  - Bestudering van bestaande projectdocumentatie, comments en bekende beperkingen van de Polarbear-integratie.
-  - Doel: context, aannames en operationele constraints expliciet maken.
+    - Bestudering van bestaande projectdocumentatie, comments en bekende beperkingen van de Polarbear-integratie.
+    - Doel: context, aannames en operationele beperkingen expliciet maken.
+
 - **Statische code-inspectie**
-  - Gerichte review van kritieke backend-modules met focus op I/O-gedrag (TCP/Modbus/HTTP), foutafhandeling, polling-loops, timeouts en reconnect-flow.
-  - Doel: structurele risico's identificeren zonder runtime-afhankelijkheid.
+    - Gerichte review van kritieke backend-modules met focus op TCP, Modbus, HTTP, foutafhandeling, polling-loops, timeouts en reconnect-flow.
+    - Doel: structurele risico’s identificeren zonder afhankelijk te zijn van runtime-tests.
+
 - **Architectuur- en ketenanalyse**
-  - Analyse van afhankelijkheden in de keten: applicatie -> transportlaag -> gateway/device -> terugkoppeling naar database/sync.
-  - Doel: single points of failure, cascading effects en bottlenecks herkennen.
+    - Analyse van afhankelijkheden in de keten van applicatie naar transportlaag, gateway of device en terugkoppeling naar database of synchronisatie.
+    - Doel: single points of failure, cascading effects en bottlenecks herkennen.
+
 - **Risicogerichte kwaliteitsanalyse**
-  - Prioritering van bevindingen op impact voor Beschikbaarheid, Performance en Security.
-  - Doel: eerst de risico's met grootste operationele impact adresseren.
+    - Prioritering van bevindingen op basis van impact voor beschikbaarheid, performance en security.
+    - Doel: eerst de risico’s met de grootste operationele impact adresseren.
 
-### Referentiekaders en standaarden
-- **ISO/IEC 25010** (Software Product Quality Model)
-  - Toegepast op relevante kenmerken: Reliability (incl. beschikbaarheid), Performance Efficiency en Security.
-- **OWASP Top 10 / OWASP ASVS** (richtlijnniveau)
-  - Richtinggevend voor inputvalidatie, transportbeveiliging, logging-hygiene en trust boundaries.
-- **NIST-principes** (best-practice niveau)
-  - Richtinggevend voor segmentatie, least privilege, monitoring en resilience.
-- **Protocolspecifieke praktijkrichtlijnen** (Modbus/TCP en raw TCP)
-  - Erkend dat native encryptie/authenticatie vaak ontbreekt; compenserende maatregelen zijn daarom noodzakelijk.
+### 3.1.2. Resultaten
+Bij deze analyse is gebruikgemaakt van de volgende referentiekaders en standaarden:
 
----
+- **ISO/IEC 25010**
+    - Toegepast op Reliability, Performance Efficiency en Security.
 
-## 1) Beschikbaarheid (Availability)
+- **OWASP Top 10 / OWASP ASVS**
+    - Richtinggevend voor inputvalidatie, transportbeveiliging, logging-hygiëne en trust boundaries.
 
-### Wat gaat goed
-- **Timeouts** zijn op meerdere plekken aanwezig (bijv. socket timeouts / setTimeout() met reject/destroy). Dit voorkomt dat een vastgelopen connectie de flow *voor altijd* blokkeert.
-- In de Polarbear (v2) module is er een **reconnect-mechanisme** geïntroduceerd met een vertraging (`reconnectDelay`) en een `reconnecting`-flag om dubbele pogingen te beperken.
+- **Protocolspecifieke praktijkrichtlijnen**
+    - Met name voor Modbus/TCP en raw TCP, waarbij rekening is gehouden met het ontbreken van native encryptie en authenticatie.
 
-### Risico’s / zwakke punten
-1. **Single point of failure per device-communicatiepad**
-    - Als een device (of gateway) niet reageert, zijn er flows die meerdere devices/panels in één sessie updaten. Eén falende node kan de rest vertragen of blokkeren (dit wordt in comments ook benoemd).
+Deze combinatie van methoden en standaarden biedt een passend kader om de backend op een gestructureerde manier te beoordelen.
 
-2. **Onvolledig/risicovol socket lifecycle-beheer**
-    - Er zijn patronen waarin sockets worden geopend en vervolgens via timers worden “destroyed”, maar niet altijd met duidelijke afhandeling van alle event-paths (connect/error/timeout/close). Dat kan leiden tot:
-        - “hanging promises” (promises die nooit resolven/rejecten),
-        - resource leaks (open sockets),
-        - instabiel gedrag bij packet loss / partial reads.
+## 3.2. Welke aandachtspunten zijn er op het gebied van beschikbaarheid?
 
-3. **Tight polling / hoge frequentie loops**
-    - In Polarbear v2 wordt `getFlags()` periodiek opnieuw aangeroepen met ~20ms delay. Dit is extreem agressief en kan beschikbaarheid verslechteren:
-        - hoge load op panel(s),
-        - meer kans op timeouts,
-        - meer reconnects → “self-inflicted outage”.
+### 3.2.1. Methoden
+Voor dit onderdeel is vooral gekeken naar socket-afhandeling, timeouts, reconnect-logica, polling-mechanismen en foutafhandeling binnen de device-communicatie.
 
-4. **Foutafhandeling: soms loggen maar doorgaan**
-    - In sommige gevallen worden errors gelogd maar wordt de hogere laag niet geïnformeerd of wordt alsnog `resolve` gedaan. Dat kan “silent failure” geven: systeem lijkt beschikbaar maar sync is kapot.
+### 3.2.2. Resultaten
+Binnen de backend zijn verschillende positieve punten zichtbaar op het gebied van beschikbaarheid. Zo zijn op meerdere plekken timeouts aanwezig, waardoor vastgelopen connecties niet onbeperkt blijven hangen. Daarnaast bevat de Polarbear v2-module een reconnect-mechanisme met vertraging en een vlag om dubbele reconnect-pogingen te beperken.
 
-### Aanbevelingen (availability)
-- Introduceer **centrale retry policy** per type transport:
-    - max retries, exponential backoff + jitter, circuit breaker (tijdelijk “open” bij herhaald falen).
-- Verlaag polling en maak het event/push-gedreven waar mogelijk; anders:
-    - **poll interval** realistisch (bijv. 250ms–2s afhankelijk van hardware),
-    - **adaptive polling** (langzamer bij fouten).
-- Zorg dat elke async I/O call **altijd** eindigt in resolve/reject (met finally cleanup).
-- Voeg **health metrics** toe: error rate per device, timeout rate, reconnect count, last-success timestamp.
+Tegelijkertijd zijn er ook duidelijke risico’s:
 
----
+- **Single point of failure per device-communicatiepad**
+    - Wanneer een device of gateway niet reageert, kunnen meerdere gerelateerde flows vertragen of blokkeren.
 
-## 2) Performance
+- **Onvolledig socket lifecycle-beheer**
+    - Niet alle event-paths worden altijd eenduidig afgehandeld, wat kan leiden tot hanging promises, resource leaks en instabiel gedrag.
 
-### Wat gaat goed
-- Er wordt regelmatig **sequentieel** gewerkt (bijv. “update panels one by one”), wat soms noodzakelijk is bij Modbus bussen om collisions te vermijden.
-- Er zijn delays ingebouwd om hardware niet te overspoelen (bijv. 100ms in sommige loops).
+- **Agressieve polling**
+    - In Polarbear v2 wordt `getFlags()` met een interval van ongeveer 20 ms aangeroepen. Dit is zeer frequent en kan leiden tot extra load, timeouts en reconnects.
 
-### Bottlenecks / performance-risico’s
-1. **Seriële processing + hoge timeouts = lange end-to-end latency**
-    - Als updates per panel of per register sequentieel gebeuren en elk request een timeout van seconden kan raken, kan totale looptijd snel oplopen (N devices × timeout).
+- **Silent failure**
+    - Sommige fouten worden alleen gelogd, zonder dat hogere lagen goed geïnformeerd worden. Hierdoor lijkt het systeem beschikbaar, terwijl synchronisatieproblemen blijven bestaan.
 
-2. **Onnodig veel netwerk roundtrips**
-    - Patroon: read flag → read setpoint/fanspeed → write flag clear → etc. Dit kan per wijziging meerdere transacties kosten.
-    - Vooral bij polling-loop kan dit verkeer domineren.
+De belangrijkste aanbevelingen op het gebied van beschikbaarheid zijn:
 
-3. **Console logging op hoge frequentie**
-    - Veel logging in hot paths (polling, per socket data). Dit is CPU- en I/O-belastend en kan latency verhogen.
+- een centrale retry-policy per transporttype;
+- exponential backoff en jitter toepassen;
+- polling realistischer maken;
+- adaptive polling gebruiken bij foutcondities;
+- garanderen dat iedere async I/O-call altijd eindigt in resolve of reject met cleanup;
+- health metrics toevoegen, zoals timeout rate, reconnect count en last-success timestamp.
 
-4. **Geen batching waar mogelijk**
-    - Modbus ondersteunt vaak “read multiple registers” / “write multiple registers”. Als er veel single writes gebeuren kan batching performance en betrouwbaarheid verbeteren.
+## 3.3. Welke aandachtspunten zijn er op het gebied van performance?
 
-### Aanbevelingen (performance)
-- Introduceer **rate limiting** per device/gateway (tokens per seconde).
-- Gebruik **batch reads/writes** waar protocol het toelaat.
-- Verlaag logging in hot paths naar debug-level en maak debug opt-in.
-- Maak onderscheid tussen:
-    - “control path” (user action) → lage latency,
-    - “sync path” (periodieke sync) → mag trager maar moet stabiel zijn.
-- Overweeg een **queue per device** (FIFO) zodat je concurrency gecontroleerd houdt zonder overal losse timeouts/delays.
+### 3.3.1. Methoden
+Voor dit onderdeel is gekeken naar seriële verwerking, netwerkroundtrips, logging in hot paths en batching-mogelijkheden binnen de gebruikte protocollen.
 
----
+### 3.3.2. Resultaten
+Binnen de backend wordt regelmatig sequentieel gewerkt. Dat is in sommige gevallen logisch, bijvoorbeeld om botsingen op een Modbus-bus te voorkomen. Ook zijn er op meerdere plekken vertragingen ingebouwd om hardware niet te overspoelen.
 
-## 3) Security
+Toch zijn er duidelijke performance-risico’s:
 
-### Observaties
-Dit soort integraties draaien vaak in een “trusted LAN”, maar hebben een groot attack surface:
-- open TCP sockets naar apparaten/gateways,
-- Modbus (meestal **geen encryptie/auth**),
-- HTTP-calls naar services (in één implementatie plain HTTP).
+- **Seriële verwerking in combinatie met hoge timeouts**
+    - Wanneer requests per panel of per register achter elkaar worden uitgevoerd, kan de totale verwerkingstijd sterk oplopen.
 
-### Risico’s
-1. **Geen transport security / authenticatie op device-protocollen**
-    - Modbus/TCP en raw TCP zijn doorgaans plaintext en zonder auth.
-    - Dit betekent: iedereen op hetzelfde netwerk kan commando’s sniffen/spoofen.
+- **Veel losse netwerktransacties**
+    - Het patroon van meerdere reads en writes per wijziging veroorzaakt extra roundtrips en verhoogt de belasting.
 
-2. **HTTP zonder TLS**
-    - Als HTTP endpoints over het netwerk gaan: risico op MITM, request tampering.
+- **Logging in hot paths**
+    - Veel console logging binnen polling-loops of socket-events verhoogt CPU- en I/O-belasting.
 
-3. **Input validation & trust boundaries**
-    - Device IDs, register addresses, host/port, temperature en fanspeed worden doorgegeven. Zonder strikte validatie kunnen fouten of misconfiguratie leiden tot:
-        - writes naar verkeerde registers,
-        - onverwacht gedrag van hardware,
-        - crash/DoS door out-of-range values.
+- **Gebrek aan batching**
+    - Waar Modbus het toestaat, worden niet altijd meerdere registers tegelijk gelezen of geschreven.
 
-4. **Logging van gevoelige info**
-    - Logs kunnen IP’s, device identifiers en payloads bevatten. Dit vergroot impact bij log-leak.
+Aanbevelingen op het gebied van performance zijn:
 
-### Aanbevelingen (security)
-- Netwerksegmentatie is hier cruciaal:
-    - plaats domotics/apparaten in een **apart VLAN**,
-    - firewall rules: alleen backend → devices (least privilege).
-- Waar mogelijk:
-    - gebruik **TLS** (https) voor HTTP-services,
-    - zet services niet bloot buiten localhost/VLAN.
-- Voeg **strikte inputvalidatie** toe op:
-    - temperatuurbereik, fanspeedbereik,
-    - deviceTerminalId format,
-    - host/port allowlist.
-- Beperk logging van payloads/IDs (masking) en zet logs achter passende toegang.
-- Overweeg **app-level authorization**: alleen geauthenticeerde gebruikers/flows mogen setpoints aanpassen (afhankelijk van hoe de API endpoints zijn ontworpen).
+- rate limiting per device of gateway invoeren;
+- batch reads en writes gebruiken waar mogelijk;
+- logging in hot paths beperken tot debug-niveau;
+- onderscheid maken tussen control path en sync path;
+- een queue per device toepassen om concurrency gecontroleerd te houden.
 
----
+## 3.4. Welke aandachtspunten zijn er op het gebied van security?
 
-## Samenvatting van bevindingen en aandachtspunten
+### 3.4.1. Methoden
+Voor dit onderdeel is gekeken naar transportbeveiliging, inputvalidatie, trust boundaries en logging-hygiëne binnen de device- en servicecommunicatie.
 
-### Kernbevindingen
-- **Beschikbaarheid** is het meest kwetsbaar door agressieve polling, foutgevoelige socket-lifecycle en afhankelijkheid van trage/offline devices.
-- **Performance** wordt vooral beperkt door seriele I/O, relatief hoge timeout-paden en veel losse netwerktransacties.
-- **Security** steunt nu sterk op trusted-LAN aannames, terwijl gebruikte transportprotocollen beperkt zijn in native beveiliging.
+### 3.4.2. Resultaten
+De onderzochte integraties draaien grotendeels binnen een vertrouwd netwerk, maar hebben wel een aanzienlijk attack surface. Er wordt gebruikgemaakt van open TCP sockets, Modbus zonder standaard encryptie of authenticatie en in één geval HTTP-verkeer zonder TLS.
 
-### Belangrijkste aandachtspunten (prioriteit)
-1. **Stabiliseer device-communicatiepad**
-   - Uniforme timeout/retry/backoff-strategie, duidelijke reconnect-state en gegarandeerde resolve/reject + cleanup.
-2. **Verlaag en beheers poll-load**
-   - Polling-interval realistischer maken en adaptive polling toepassen bij foutcondities.
-3. **Voorkom sync-feedback en write-ping-pong**
-   - Korte write-hold/cooldown per device-zone en consistente state-cache-afhandeling.
-4. **Beperk roundtrips en serial bottlenecks**
-   - Batch reads/writes waar mogelijk en queue/rate-limit per device/gateway.
-5. **Versterk security-baseline**
-   - Segmentatie (VLAN/firewall), inputvalidatie op write-paden, logging-sanitization en TLS waar toepasbaar.
+De belangrijkste security-risico’s zijn:
 
----
+- **Ontbrekende transportbeveiliging**
+    - Modbus/TCP en raw TCP zijn doorgaans plaintext en zonder authenticatie, waardoor sniffing en spoofing mogelijk zijn binnen hetzelfde netwerk.
 
-## Korte conclusie
-- **Beschikbaarheid**: grootste risico’s liggen bij agressieve polling, fragiele socket-afhandeling en cascading failures wanneer één device offline is.
-- **Performance**: wordt vooral begrensd door seriële I/O + timeouts en het hoge aantal roundtrips; batching en rate limiting zijn logische verbeteringen.
-- **Security**: transport is grotendeels “insecure by design” (Modbus/RAW TCP). Compenseer met netwerksegmentatie, TLS waar kan, inputvalidatie en logging-hygiëne.
+- **HTTP zonder TLS**
+    - Wanneer HTTP over het netwerk loopt, ontstaat risico op MITM-aanvallen en request-tampering.
+
+- **Onvoldoende inputvalidatie**
+    - Zonder strikte validatie van device ID’s, registeradressen, hosts, poorten, temperatuurwaarden en fanspeed kunnen fouten of misconfiguraties leiden tot onjuist hardwaregedrag of crashes.
+
+- **Gevoelige logging**
+    - Logs kunnen IP-adressen, device identifiers en payloads bevatten, wat de impact van een lek vergroot.
+
+Aanbevelingen op het gebied van security zijn:
+
+- netwerksegmentatie toepassen met aparte VLAN’s en firewallregels;
+- TLS gebruiken waar dat mogelijk is;
+- services niet onnodig buiten localhost of VLAN beschikbaar maken;
+- strikte inputvalidatie toevoegen op alle write-paden;
+- logging beperken en gevoelige gegevens maskeren;
+- waar relevant app-level autorisatie toepassen voor setpoint-wijzigingen.
+
+## 3.5. Wat zijn de belangrijkste bevindingen en prioriteiten?
+
+### 3.5.1. Methoden
+Voor dit onderdeel zijn de bevindingen uit de eerdere analyseonderdelen samengebracht en geprioriteerd op basis van operationele impact.
+
+### 3.5.2. Resultaten
+Uit de analyse blijkt dat beschikbaarheid momenteel het meest kwetsbare kwaliteitsaspect is. Vooral agressieve polling, foutgevoelige socket-afhandeling en afhankelijkheid van trage of offline devices vormen hier een groot risico.
+
+Performance wordt vooral beperkt door seriële I/O, relatief hoge timeout-paden en een hoog aantal losse netwerktransacties. Security is in grote mate afhankelijk van trusted-LAN-aannames, terwijl de gebruikte protocollen van zichzelf weinig bescherming bieden.
+
+De belangrijkste prioriteiten zijn:
+
+1. stabiliseren van het device-communicatiepad;
+2. verlagen en beheersen van poll-load;
+3. voorkomen van sync-feedback en write-ping-pong;
+4. beperken van roundtrips en seriële bottlenecks;
+5. versterken van de security-baseline met segmentatie, inputvalidatie en logging-hygiëne.
+
+# 4. Conclusie
+
+Op basis van deze kwaliteitsanalyse kan worden geconcludeerd dat de backend binnen de domotics airco-integraties en de Polarbear-logica vooral kwetsbaar is op het gebied van beschikbaarheid. De grootste risico’s liggen bij agressieve polling, fragiele socket-afhandeling en cascading failures wanneer één device offline raakt.
+
+Op het gebied van performance zorgen vooral seriële I/O, hoge timeout-paden en veel losse netwerktransacties voor vertraging en inefficiëntie. Security is daarnaast beperkt doordat de gebruikte transportprotocollen grotendeels insecure by design zijn en vooral steunen op de aanname van een vertrouwd netwerk.
+
+De analyse laat zien dat gerichte verbeteringen mogelijk zijn. Denk hierbij aan uniforme timeout- en retry-strategieën, realistischer polling, batching, queueing, netwerksegmentatie, inputvalidatie en betere logging-hygiëne. Door deze maatregelen door te voeren kan de backend stabieler, efficiënter en veiliger worden ingericht.
+
+# 5. Bronnen
+
+- ISO/IEC 25010
+- OWASP Top 10
+- OWASP ASVS
+- Protocolspecifieke praktijkrichtlijnen voor Modbus/TCP en raw TCP
+- Bestaande projectdocumentatie, comments en codeanalyse van de backend
