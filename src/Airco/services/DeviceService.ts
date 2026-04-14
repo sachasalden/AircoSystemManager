@@ -13,6 +13,7 @@ export default class DeviceService {
         id: room.id,
         name: room.name,
         aircopanels: room.aircopanels || [],
+        airconditioners: room.airconditioners || [],
       })),
     }));
   }

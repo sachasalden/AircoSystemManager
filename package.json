@@ -46,6 +46,7 @@
     "eslint": "^9.39.2",
     "express": "^5.2.1",
     "jsmodbus": "^4.0.10",
+    "modbus-event": "^2.1.0",
     "modbus-rtu": "^0.2.1",
     "modbus-serial": "^8.0.23",
     "mongodb": "^7.1.0",

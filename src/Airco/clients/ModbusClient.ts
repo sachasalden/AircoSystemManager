@@ -92,27 +92,4 @@ export default class ModbusClient {
     await this.client.writeRegister(register, value);
   }
 
-  async maskWriteRegister(
-    register: number,
-    andMask: number,
-    orMask: number,
-  ): Promise<void> {
-    await (this.client as any).maskWriteRegister(register, andMask, orMask);
-  }
-
-  async readGatewayStatusV2(unitId: number, zone: 1 | 2) {
-    this.client.setID(unitId);
-
-    const data = await this.client.readHoldingRegisters(7001, 47);
-    const arr = Array.isArray(data) ? data : (data as any).data;
-    const zoneOffset = zone === 1 ? 21 : 34;
-
-    return {
-      displayTemp: (arr[zoneOffset] & 0x03ff) / 10,
-      wallGroupTemp: (arr[zoneOffset + 1] & 0x03ff) / 10,
-      floorGroupTemp: (arr[zoneOffset + 2] & 0x03ff) / 10,
-      setpoint: (arr[zoneOffset + 3] & 0x03ff) / 10,
-      fanSpeed: arr[zoneOffset + 11] & 0x07,
-    };
-  }
 }

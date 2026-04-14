@@ -20,17 +20,17 @@ export type AirconditionerData = {
 export type AirconditionerDevice = {
   id: string;
   name?: string;
-  minTemperature?: number;
-  maxTemperature?: number;
-  minSetTemperature?: number;
-  maxSetTemperature?: number;
-  setTemperature?: number;
-  currentTemperature?: number;
-  currentFanspeed?: number;
-  minFanspeed?: number;
-  maxFanspeed?: number;
+  deviceType: string;
+  minTemperature: number;
+  maxTemperature: number;
+  minSetTemperature: number;
+  maxSetTemperature: number;
+  setTemperature: number;
+  currentTemperature: number;
+  currentFanspeed: number;
+  minFanspeed: number;
+  maxFanspeed: number;
   data: AirconditionerData;
-  deviceType?: string;
 };
 
 type Room = {
@@ -45,6 +45,18 @@ type ZoneDocument = {
   name: string;
   rooms: Room[];
 };
+
+const DEFAULT_PANEL_TYPE = 'polarbear-v1';
+const DEFAULT_PANEL_PORT = 4001;
+
+const DEFAULT_AIRCO_DEVICE_TYPE = 'FC-500PC/FC-1100PC';
+const DEFAULT_AIRCO_ADAPTER_TYPE = 'HeinAndHopmanIpSystem';
+const DEFAULT_AIRCO_MIN_TEMPERATURE = 16;
+const DEFAULT_AIRCO_MAX_TEMPERATURE = 30;
+const DEFAULT_AIRCO_MIN_FANSPEED = 0;
+const DEFAULT_AIRCO_MAX_FANSPEED = 4;
+const DEFAULT_AIRCO_CURRENT_TEMPERATURE = -1;
+const DEFAULT_AIRCO_CURRENT_FANSPEED = -1;
 
 export class AircopanelRepository {
   private client: MongoClient;
@@ -68,9 +80,125 @@ export class AircopanelRepository {
       .collection<ZoneDocument>(this.collectionName);
   }
 
+  private toNumber(value: unknown, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  private normalizePanelDevice(device: Partial<PanelDevice>): PanelDevice {
+    return {
+      id: device.id || uuidv4(),
+      name: device.name ?? '',
+      ip: device.ip ?? '',
+      type: device.type ?? DEFAULT_PANEL_TYPE,
+      model: device.model ?? '',
+      port: this.toNumber(device.port, DEFAULT_PANEL_PORT),
+      ids: Array.isArray(device.ids)
+        ? device.ids
+            .map((id) => this.toNumber(id, NaN))
+            .filter((id) => Number.isFinite(id))
+        : [],
+    };
+  }
+
+  private normalizeAirconditionerDevice(
+    device: Partial<AirconditionerDevice>,
+  ): AirconditionerDevice {
+    const minTemperature = this.toNumber(
+      device.minTemperature,
+      DEFAULT_AIRCO_MIN_TEMPERATURE,
+    );
+    const maxTemperature = this.toNumber(
+      device.maxTemperature,
+      DEFAULT_AIRCO_MAX_TEMPERATURE,
+    );
+
+    const minSetTemperature = this.toNumber(
+      device.minSetTemperature,
+      minTemperature,
+    );
+    const maxSetTemperature = this.toNumber(
+      device.maxSetTemperature,
+      maxTemperature,
+    );
+
+    const minFanspeed = this.toNumber(
+      device.minFanspeed,
+      DEFAULT_AIRCO_MIN_FANSPEED,
+    );
+    const maxFanspeed = this.toNumber(
+      device.maxFanspeed,
+      DEFAULT_AIRCO_MAX_FANSPEED,
+    );
+
+    let setTemperature = this.toNumber(
+      device.setTemperature,
+      minSetTemperature,
+    );
+
+    if (setTemperature < minSetTemperature) {
+      setTemperature = minSetTemperature;
+    }
+
+    if (setTemperature > maxSetTemperature) {
+      setTemperature = maxSetTemperature;
+    }
+
+    return {
+      id: device.id || uuidv4(),
+      name: device.name ?? '',
+      deviceType: device.deviceType ?? DEFAULT_AIRCO_DEVICE_TYPE,
+      minTemperature,
+      maxTemperature,
+      minSetTemperature,
+      maxSetTemperature,
+      setTemperature,
+      currentTemperature: this.toNumber(
+        device.currentTemperature,
+        DEFAULT_AIRCO_CURRENT_TEMPERATURE,
+      ),
+      currentFanspeed: this.toNumber(
+        device.currentFanspeed,
+        DEFAULT_AIRCO_CURRENT_FANSPEED,
+      ),
+      minFanspeed,
+      maxFanspeed,
+      data: {
+        deviceId: device.data?.deviceId || uuidv4(),
+        type: device.data?.type ?? DEFAULT_AIRCO_ADAPTER_TYPE,
+        deviceTerminalId: String(device.data?.deviceTerminalId ?? '1'),
+      },
+    };
+  }
+
+  private normalizeRoom(room: Partial<Room>): Room {
+    return {
+      id: room.id || uuidv4(),
+      name: room.name ?? '',
+      aircopanels: Array.isArray(room.aircopanels)
+        ? room.aircopanels.map((panel) => this.normalizePanelDevice(panel))
+        : [],
+      airconditioners: Array.isArray(room.airconditioners)
+        ? room.airconditioners.map((airco) =>
+            this.normalizeAirconditionerDevice(airco),
+          )
+        : [],
+    };
+  }
+
+  private normalizeZone(zone: ZoneDocument): ZoneDocument {
+    return {
+      ...zone,
+      rooms: Array.isArray(zone.rooms)
+        ? zone.rooms.map((room) => this.normalizeRoom(room))
+        : [],
+    };
+  }
+
   async getZones(): Promise<ZoneDocument[]> {
     const collection = await this.getCollection();
-    return collection.find({}).toArray();
+    const zones = await collection.find({}).toArray();
+    return zones.map((zone) => this.normalizeZone(zone));
   }
 
   async getDeviceById(deviceId: string): Promise<PanelDevice | null> {
@@ -87,7 +215,7 @@ export class AircopanelRepository {
     for (const room of zone.rooms || []) {
       const device = room.aircopanels?.find((d) => d.id === deviceId);
       if (device) {
-        return device;
+        return this.normalizePanelDevice(device);
       }
     }
 
@@ -110,7 +238,7 @@ export class AircopanelRepository {
     for (const room of zone.rooms || []) {
       const device = room.airconditioners?.find((d) => d.id === deviceId);
       if (device) {
-        return device;
+        return this.normalizeAirconditionerDevice(device);
       }
     }
 
@@ -127,7 +255,7 @@ export class AircopanelRepository {
       for (const room of zone.rooms || []) {
         for (const device of room.aircopanels || []) {
           devices.push({
-            ...device,
+            ...this.normalizePanelDevice(device),
             zoneId: zone._id.toString(),
             roomId: room.id,
           });
@@ -151,7 +279,7 @@ export class AircopanelRepository {
       for (const room of zone.rooms || []) {
         for (const device of room.airconditioners || []) {
           devices.push({
-            ...device,
+            ...this.normalizeAirconditionerDevice(device),
             zoneId: zone._id.toString(),
             roomId: room.id,
           });
@@ -168,14 +296,14 @@ export class AircopanelRepository {
     const collection = await this.getCollection();
 
     const { zoneId, roomId, ...deviceFields } = device;
-    deviceFields.id = deviceFields.id || uuidv4();
+    const normalizedDevice = this.normalizePanelDevice(deviceFields);
 
     await collection.updateOne(
       { _id: new ObjectId(zoneId), 'rooms.id': roomId },
-      { $push: { 'rooms.$.aircopanels': deviceFields } },
+      { $push: { 'rooms.$.aircopanels': normalizedDevice } },
     );
 
-    return deviceFields;
+    return normalizedDevice;
   }
 
   async addAircoDevice(
@@ -184,14 +312,14 @@ export class AircopanelRepository {
     const collection = await this.getCollection();
 
     const { zoneId, roomId, ...deviceFields } = device;
-    deviceFields.id = deviceFields.id || uuidv4();
+    const normalizedDevice = this.normalizeAirconditionerDevice(deviceFields);
 
     await collection.updateOne(
       { _id: new ObjectId(zoneId), 'rooms.id': roomId },
-      { $push: { 'rooms.$.airconditioners': deviceFields } },
+      { $push: { 'rooms.$.airconditioners': normalizedDevice } },
     );
 
-    return deviceFields;
+    return normalizedDevice;
   }
 
   async updateDevice(device: PanelDevice): Promise<PanelDevice | null> {
@@ -212,13 +340,14 @@ export class AircopanelRepository {
 
       if (deviceIdx !== -1) {
         const updatePath = `rooms.${roomIdx}.aircopanels.${deviceIdx}`;
+        const normalizedDevice = this.normalizePanelDevice(device);
 
         await collection.updateOne(
           { _id: zone._id },
-          { $set: { [updatePath]: device } },
+          { $set: { [updatePath]: normalizedDevice } },
         );
 
-        return device;
+        return normalizedDevice;
       }
     }
 
@@ -239,19 +368,36 @@ export class AircopanelRepository {
     }
 
     for (const [roomIdx, room] of zone.rooms.entries()) {
+      const existingDevice = (room.airconditioners || []).find(
+        (d) => d.id === device.id,
+      );
+
       const deviceIdx = (room.airconditioners || []).findIndex(
         (d) => d.id === device.id,
       );
 
-      if (deviceIdx !== -1) {
+      if (deviceIdx !== -1 && existingDevice) {
         const updatePath = `rooms.${roomIdx}.airconditioners.${deviceIdx}`;
+
+        const normalizedDevice = this.normalizeAirconditionerDevice({
+          ...existingDevice,
+          ...device,
+          data: {
+            ...(existingDevice.data || {}),
+            ...(device.data || {}),
+            deviceId:
+              device.data?.deviceId ||
+              existingDevice.data?.deviceId ||
+              uuidv4(),
+          },
+        });
 
         await collection.updateOne(
           { _id: zone._id },
-          { $set: { [updatePath]: device } },
+          { $set: { [updatePath]: normalizedDevice } },
         );
 
-        return device;
+        return normalizedDevice;
       }
     }
 

@@ -30,7 +30,7 @@ async function main() {
   const unitIds = [1, 2];
   let client = await createModbusClient();
 
-  console.log('Connected to Polarbear');
+  console.log('Connected to polarbear');
 
   // // Zone 1 uses virtual register
   // await setTempSensor(client, unitIds, 2, TempSensorSource.VirtualRegister);
@@ -50,9 +50,9 @@ async function main() {
   // await setLowerLimit(client, unitIds, 15); // Lower limit: 15
   // await new Promise((r) => setTimeout(r, 500));
 
-  // await setVirtualTemp(client, unitIds, 2, 24.0); // Zone 2, 24.0°C
-  // await new Promise((r) => setTimeout(r, 500));
-  //
+  await setVirtualTemp(client, [1], 1, 24.0); // Zone 2, 24.0°C
+  await new Promise((r) => setTimeout(r, 500));
+
   // Test setSetpoint op beide devices
   // await setSetpoint(client, unitIds, 1, 23.5); // Zone 1, 23.5°C
   // await new Promise((r) => setTimeout(r, 500));
@@ -76,12 +76,12 @@ async function main() {
   // await getFanmode(client, [1], 1);
   // await new Promise((r) => setTimeout(r, 500));
   //
-  await setFanmode(client, [1], 1, 1); // voor auto 1 voor off 0
-  await new Promise((r) => setTimeout(r, 500));
-
-  await setFanmode(client, [1], 1, 1); // voor auto 1 voor off 0
-  await new Promise((r) => setTimeout(r, 500));
+  // await setFanmode(client, [1], 1, 1); // voor auto 1 voor off 0
+  // await new Promise((r) => setTimeout(r, 500));
   //
+  // await setFanmode(client, [1], 1, 1); // voor auto 1 voor off 0
+  // await new Promise((r) => setTimeout(r, 500));
+  // //
   // await getFanmode(client, [1], 1);
   // await new Promise((r) => setTimeout(r, 500));
 
@@ -114,7 +114,7 @@ async function main() {
   // // Wait for units to reboot and come back online
   // await new Promise((r) => setTimeout(r, 30000));
   //
-  // console.log('Reconnecting to Polarbear...');
+  // console.log('Reconnecting to polarbear...');
   // client = await createModbusClient();
   // console.log('Reconnected');
   //

@@ -1,5 +1,5 @@
 /**
- * Test script for Polarbear Backend
+ * Test script for polarbear Backend
  * This script demonstrates how to use the PolarbearBackend class
  */
 
@@ -7,7 +7,7 @@ import { PolarbearBackend } from './polarbear-backend';
 
 async function testConnection() {
   console.log('='.repeat(60));
-  console.log('Polarbear Backend Test - Connection Only');
+  console.log('polarbear Backend Test - Connection Only');
   console.log('='.repeat(60));
 
   const backend = new PolarbearBackend({
@@ -20,7 +20,7 @@ async function testConnection() {
     await backend.connect();
 
     if (backend.connected) {
-      console.log('✅ Successfully connected to Polarbear!');
+      console.log('✅ Successfully connected to polarbear!');
       console.log(`📍 Host: ${backend.getConfig().host}`);
       console.log(`🔌 Port: ${backend.getConfig().port}`);
     } else {
@@ -38,7 +38,7 @@ async function testConnection() {
 
 async function testReadData() {
   console.log('='.repeat(60));
-  console.log('Polarbear Backend Test - Read Data');
+  console.log('polarbear Backend Test - Read Data');
   console.log('='.repeat(60));
 
   const backend = new PolarbearBackend({
@@ -93,7 +93,7 @@ async function testReadData() {
 
 async function testWriteData() {
   console.log('='.repeat(60));
-  console.log('Polarbear Backend Test - Write Data (COMMENTED OUT)');
+  console.log('polarbear Backend Test - Write Data (COMMENTED OUT)');
   console.log('='.repeat(60));
   console.log('\n⚠️  Write operations are commented out for safety.');
   console.log('Uncomment the code below to test write operations.\n');
@@ -145,7 +145,7 @@ async function testWriteData() {
 
 async function scanUnits() {
   console.log('='.repeat(60));
-  console.log('Polarbear Backend Test - Scan Active Units');
+  console.log('polarbear Backend Test - Scan Active Units');
   console.log('='.repeat(60));
 
   const backend = new PolarbearBackend({

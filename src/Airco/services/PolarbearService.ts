@@ -259,4 +259,16 @@ export default class PolarbearService {
 
     return (arr[0] ?? 0) & 0x0007;
   }
+
+  async getSnapshot(unitId: number, zone: Zone) {
+    return {
+      setpoint: await this.getSetpoint(unitId, zone),
+      virtualTemperature: await this.getVirtualTemperature(unitId, zone),
+      fanSpeed: await this.getFanSpeed(unitId, zone),
+      fanMode: await this.getFanMode(unitId, zone),
+      flags: await this.getFlags(unitId),
+      pendingSetpoint: await this.getPendingSetpoint(unitId, zone),
+      pendingFanMode: await this.getPendingFanMode(unitId, zone),
+    };
+  }
 }

@@ -1,6 +1,6 @@
 /**
- * Polarbear Backend API
- * Simple backend service to communicate with Polarbear Zentium Palladium wall panels
+ * polarbear Backend API
+ * Simple backend service to communicate with polarbear Zentium Palladium wall panels
  * using modbus-serial over TCP
  */
 
@@ -118,7 +118,7 @@ export class PolarbearBackend {
   }
 
   /**
-   * Connect to the Polarbear panel via Modbus TCP
+   * Connect to the polarbear panel via Modbus TCP
    */
   async connect(): Promise<void> {
     if (this.isConnected) {
@@ -147,7 +147,7 @@ export class PolarbearBackend {
   }
 
   /**
-   * Disconnect from the Polarbear panel
+   * Disconnect from the polarbear panel
    */
   async disconnect(): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -158,7 +158,7 @@ export class PolarbearBackend {
 
       this.client.close(() => {
         this.isConnected = false;
-        console.log('Disconnected from Polarbear');
+        console.log('Disconnected from polarbear');
         resolve();
       });
     });

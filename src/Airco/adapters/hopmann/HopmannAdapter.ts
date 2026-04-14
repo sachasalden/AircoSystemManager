@@ -82,7 +82,7 @@ export default class HopmannAdapter implements AircoAdapter {
 
       socket.setTimeout(5000);
       socket.once('error', onError);
-      socket.once('timeout', () => onError(new Error('Hopmann socket timeout')));
+      socket.once('timeout', () => onError(new Error('hopmann socket timeout')));
 
       socket.once('connect', async () => {
         try {
@@ -137,7 +137,7 @@ export default class HopmannAdapter implements AircoAdapter {
   }
 
   async getVirtualTemperature(unitId: number, zone: AircoZone): Promise<number> {
-    // Hopmann legacy flow exposes one temperature datapath; mirror setpoint read.
+    // hopmann legacy flow exposes one temperature datapath; mirror setpoint read.
     return await this.getSetpoint(unitId, zone);
   }
 
@@ -146,7 +146,7 @@ export default class HopmannAdapter implements AircoAdapter {
     zone: AircoZone,
     temperature: number,
   ): Promise<void> {
-    // Hopmann legacy flow writes one temperature datapath; mirror setpoint write.
+    // hopmann legacy flow writes one temperature datapath; mirror setpoint write.
     await this.setSetpoint(unitId, zone, temperature);
   }
 
