@@ -35,6 +35,16 @@ export default class PolarbearMonitor {
         'schema' | 'messageId' | 'timestamp' | 'sourceInstanceId'
       >,
     ) => Promise<void>,
+    private onSnapshot: (
+      context: {
+        zoneId: string;
+        roomId: string;
+        panelId: string;
+        unitId: number;
+        zone: Zone;
+      },
+      snapshot: Snapshot,
+    ) => void | Promise<void>,
     private modbusTimeoutMs = 10000,
     private requestGapMs = 30,
   ) {}
@@ -338,6 +348,17 @@ export default class PolarbearMonitor {
     zone: Zone,
     snapshot: Snapshot,
   ): Promise<void> {
+    await this.onSnapshot(
+      {
+        zoneId: room.zoneId,
+        roomId: room.roomId,
+        panelId,
+        unitId,
+        zone,
+      },
+      snapshot,
+    );
+
     for (const property of Object.keys(snapshot) as SyncProperty[]) {
       const value = snapshot[property];
       const key = createStateKey(panelId, unitId, zone, property);

@@ -1,0 +1,231 @@
+import { useEffect, useState } from 'react';
+import {
+  normalizeAirconditionerDevice,
+  type AirconditionerDevice,
+  type EnvironmentDevice,
+} from '../model';
+import AirconditionerForm from './AirconditionerForm';
+
+type AirconditionerCardProps = {
+  device: AirconditionerDevice;
+  environmentDevices: EnvironmentDevice[];
+  onRemove: () => void;
+  onSave: (updated: AirconditionerDevice) => Promise<void>;
+};
+
+export default function AirconditionerCard({
+  device,
+  environmentDevices,
+  onRemove,
+  onSave,
+}: AirconditionerCardProps) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [editName, setEditName] = useState(device.name || '');
+  const [editDeviceType, setEditDeviceType] = useState(device.deviceType);
+  const [editEnvironmentDeviceId, setEditEnvironmentDeviceId] = useState(
+    device.data.deviceId,
+  );
+  const [editTerminalId, setEditTerminalId] = useState(
+    device.data.deviceTerminalId,
+  );
+
+  const [editMinTemperature, setEditMinTemperature] = useState<number | ''>(
+    device.minTemperature,
+  );
+  const [editMaxTemperature, setEditMaxTemperature] = useState<number | ''>(
+    device.maxTemperature,
+  );
+  const [editMinSetTemperature, setEditMinSetTemperature] = useState<number | ''>(
+    device.minSetTemperature,
+  );
+  const [editMaxSetTemperature, setEditMaxSetTemperature] = useState<number | ''>(
+    device.maxSetTemperature,
+  );
+  const [editMinFanspeed, setEditMinFanspeed] = useState<number | ''>(
+    device.minFanspeed,
+  );
+  const [editMaxFanspeed, setEditMaxFanspeed] = useState<number | ''>(
+    device.maxFanspeed,
+  );
+
+  const linkedEnvironmentDevice = environmentDevices.find(
+    (env) => env.id === device.data.deviceId,
+  );
+
+  useEffect(() => {
+    setEditName(device.name || '');
+    setEditDeviceType(device.deviceType);
+    setEditEnvironmentDeviceId(device.data.deviceId);
+    setEditTerminalId(device.data.deviceTerminalId);
+    setEditMinTemperature(device.minTemperature);
+    setEditMaxTemperature(device.maxTemperature);
+    setEditMinSetTemperature(device.minSetTemperature);
+    setEditMaxSetTemperature(device.maxSetTemperature);
+    setEditMinFanspeed(device.minFanspeed);
+    setEditMaxFanspeed(device.maxFanspeed);
+  }, [device]);
+
+  function cancelEdit() {
+    setIsEditing(false);
+    setEditName(device.name || '');
+    setEditDeviceType(device.deviceType);
+    setEditEnvironmentDeviceId(device.data.deviceId);
+    setEditTerminalId(device.data.deviceTerminalId);
+    setEditMinTemperature(device.minTemperature);
+    setEditMaxTemperature(device.maxTemperature);
+    setEditMinSetTemperature(device.minSetTemperature);
+    setEditMaxSetTemperature(device.maxSetTemperature);
+    setEditMinFanspeed(device.minFanspeed);
+    setEditMaxFanspeed(device.maxFanspeed);
+  }
+
+  async function saveEdit(value: {
+    name: string;
+    deviceType: string;
+    selectedEnvironmentDeviceId: string;
+    terminalId: string;
+    minTemperature: number | '';
+    maxTemperature: number | '';
+    minSetTemperature: number | '';
+    maxSetTemperature: number | '';
+    minFanspeed: number | '';
+    maxFanspeed: number | '';
+  }) {
+    const selectedEnvDevice = environmentDevices.find(
+      (env) => env.id === value.selectedEnvironmentDeviceId,
+    );
+
+    if (!selectedEnvDevice || !value.deviceType || !value.terminalId) {
+      window.alert(
+        'Environment device, device model en terminal id zijn verplicht.',
+      );
+      return;
+    }
+
+    await onSave(
+      normalizeAirconditionerDevice({
+        ...device,
+        name: value.name,
+        deviceType: value.deviceType,
+        minTemperature:
+          value.minTemperature === '' ? undefined : Number(value.minTemperature),
+        maxTemperature:
+          value.maxTemperature === '' ? undefined : Number(value.maxTemperature),
+        minSetTemperature:
+          value.minSetTemperature === '' ? undefined : Number(value.minSetTemperature),
+        maxSetTemperature:
+          value.maxSetTemperature === '' ? undefined : Number(value.maxSetTemperature),
+        minFanspeed: value.minFanspeed === '' ? undefined : Number(value.minFanspeed),
+        maxFanspeed: value.maxFanspeed === '' ? undefined : Number(value.maxFanspeed),
+        data: {
+          deviceId: selectedEnvDevice.id,
+          type: selectedEnvDevice.type,
+          deviceTerminalId: value.terminalId,
+        },
+      }),
+    );
+
+    setIsEditing(false);
+  }
+
+  return (
+    <div className="climate-card">
+      <div className="climate-card-inner">
+        <div className="card-top">
+          <div className="card-title">
+            <div className="card-icon">❄️</div>
+            <div className="card-title-text">
+              <h4>{device.name || 'Airconditioning'}</h4>
+              <p>
+                {device.deviceType} • terminal {device.data.deviceTerminalId || '—'}
+              </p>
+            </div>
+          </div>
+
+          <div className="card-actions">
+            {!isEditing ? (
+              <button
+                className="circle-btn"
+                type="button"
+                onClick={() => setIsEditing(true)}
+              >
+                Edit
+              </button>
+            ) : (
+              <button className="circle-btn" type="button" onClick={cancelEdit}>
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!isEditing ? (
+          <>
+            <div className="big-temp">
+              {device.currentTemperature >= 0 ? `${device.currentTemperature}°` : '—'}
+            </div>
+
+            <div className="current-row">
+              <span>🎯</span>
+              <span>Setpoint: {device.setTemperature}</span>
+            </div>
+
+            <div className="stats-grid">
+              <div className="stat-card">
+                <p className="stat-label">System device</p>
+                <p className="stat-value">
+                  {linkedEnvironmentDevice
+                    ? `${linkedEnvironmentDevice.name} (${linkedEnvironmentDevice.ip}:${linkedEnvironmentDevice.port})`
+                    : 'Niet gekoppeld'}
+                </p>
+              </div>
+
+              <div className="stat-card">
+                <p className="stat-label">Adapter type</p>
+                <p className="stat-value">{device.data.type}</p>
+              </div>
+
+              <div className="stat-card">
+                <p className="stat-label">Terminal ID</p>
+                <p className="stat-value">{device.data.deviceTerminalId}</p>
+              </div>
+
+              <div className="stat-card">
+                <p className="stat-label">Fan speed</p>
+                <p className="stat-value">
+                  {device.currentFanspeed >= 0 ? device.currentFanspeed : '—'}
+                </p>
+              </div>
+            </div>
+
+            <div className="card-btn-row">
+              <button className="btn ghost-btn" type="button" onClick={onRemove}>
+                Remove
+              </button>
+            </div>
+          </>
+        ) : (
+          <AirconditionerForm
+            initialValue={{
+              name: editName,
+              deviceType: editDeviceType,
+              selectedEnvironmentDeviceId: editEnvironmentDeviceId,
+              terminalId: editTerminalId,
+              minTemperature: editMinTemperature,
+              maxTemperature: editMaxTemperature,
+              minSetTemperature: editMinSetTemperature,
+              maxSetTemperature: editMaxSetTemperature,
+              minFanspeed: editMinFanspeed,
+              maxFanspeed: editMaxFanspeed,
+            }}
+            environmentDevices={environmentDevices}
+            onSubmit={saveEdit}
+            submitLabel="Save"
+            resetLabel="Cancel"
+          />
+        )}
+      </div>
+    </div>
+  );
+}

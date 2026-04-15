@@ -5,8 +5,10 @@ import MqttSyncBus from './MqttSyncBus';
 import SyncEchoGuard from './SyncEchoGuard';
 import PolarbearMonitor from './PolarbearMonitor';
 import AircoMonitor from './AircoMonitor';
+import WallpanelInsightsStore from './WallpanelInsightsStore';
 import {
   createMessageId,
+  type PanelStateMessage,
   type SyncMessage,
   type TopologyRoom,
 } from './SyncTypes';
@@ -30,8 +32,9 @@ export default class SyncMainLoop {
     brokerUrl: string,
     topicPrefix: string,
     private sourceInstanceId: string,
-    private panelLoopMs = Number(process.env.PANEL_POLL_INTERVAL_MS || 1000),
-    private aircoLoopMs = Number(process.env.AIRCO_POLL_INTERVAL_MS || 1000),
+    private insightsStore: WallpanelInsightsStore,
+    private panelLoopMs = Number(process.env.PANEL_POLL_INTERVAL_MS || 2000),
+    private aircoLoopMs = Number(process.env.AIRCO_POLL_INTERVAL_MS || 2000),
     private topologyRefreshMs = Number(
       process.env.TOPOLOGY_REFRESH_MS || 10000,
     ),
@@ -75,6 +78,24 @@ export default class SyncMainLoop {
         );
         await this.mqtt.publish(fullMessage);
       },
+      async (context, snapshot) => {
+        const panelStateMessage: PanelStateMessage = {
+          schema: 'aircotest.panel-state.v1',
+          sourceInstanceId: this.sourceInstanceId,
+          timestamp: new Date().toISOString(),
+          zoneId: context.zoneId,
+          roomId: context.roomId,
+          panelId: context.panelId,
+          unitId: context.unitId,
+          zone: context.zone,
+          setpoint: snapshot.setpoint,
+          virtualTemperature: snapshot.virtualTemperature,
+          fanSpeed: snapshot.fanSpeed,
+          fanMode: snapshot.fanMode,
+        };
+
+        await this.mqtt.publishPanelState(panelStateMessage);
+      },
       Number(process.env.MODBUS_TIMEOUT_MS || 10000),
       Number(process.env.MODBUS_REQUEST_GAP_MS || 30),
     );
@@ -83,8 +104,13 @@ export default class SyncMainLoop {
   async start(): Promise<void> {
     this.rooms = await this.topologyService.getRooms();
 
-    await this.mqtt.start(async (message) => {
-      await this.handleRemoteMessage(message);
+    await this.mqtt.start({
+      onSyncMessage: async (message) => {
+        await this.handleRemoteMessage(message);
+      },
+      onPanelStateMessage: async (message) => {
+        this.insightsStore.applyPanelStateMessage(message);
+      },
     });
 
     void this.runPanelLoop();

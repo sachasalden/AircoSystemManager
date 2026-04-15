@@ -23,6 +23,21 @@ export type SyncMessage = {
   timestamp: string;
 };
 
+export type PanelStateMessage = {
+  schema: 'aircotest.panel-state.v1';
+  sourceInstanceId: string;
+  timestamp: string;
+  zoneId: string;
+  roomId: string;
+  panelId: string;
+  unitId: number;
+  zone: Zone;
+  setpoint?: number;
+  virtualTemperature?: number;
+  fanSpeed?: number;
+  fanMode?: number;
+};
+
 export type TopologyRoom = {
   zoneId: string;
   roomId: string;

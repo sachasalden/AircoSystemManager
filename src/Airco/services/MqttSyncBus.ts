@@ -1,20 +1,27 @@
 import { connect, type MqttClient } from 'mqtt';
-import type { SyncMessage } from './SyncTypes';
+import type { PanelStateMessage, SyncMessage } from './SyncTypes';
 
 export default class MqttSyncBus {
   private client: MqttClient | null = null;
-  private readonly topic: string;
+  private readonly eventsTopic: string;
+  private readonly panelStateTopicBase: string;
+  private readonly panelStateTopicFilter: string;
 
   constructor(
     private brokerUrl: string,
     private sourceInstanceId: string,
     topicPrefix = 'airco/sync',
   ) {
-    this.topic = `${topicPrefix}/events`;
+    this.eventsTopic = `${topicPrefix}/events`;
+    this.panelStateTopicBase = `${topicPrefix}/panel-state`;
+    this.panelStateTopicFilter = `${this.panelStateTopicBase}/+/+/+/+/+`;
   }
 
   async start(
-    onMessage: (message: SyncMessage) => Promise<void>,
+    handlers: {
+      onSyncMessage: (message: SyncMessage) => Promise<void>;
+      onPanelStateMessage: (message: PanelStateMessage) => Promise<void>;
+    },
   ): Promise<void> {
     if (this.client) {
       return;
@@ -32,7 +39,7 @@ export default class MqttSyncBus {
     });
 
     client.on('message', (topic, payload) => {
-      void this.handleIncomingMessage(topic, payload, onMessage);
+      void this.handleIncomingMessage(topic, payload, handlers);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -41,17 +48,21 @@ export default class MqttSyncBus {
     });
 
     await new Promise<void>((resolve, reject) => {
-      client.subscribe(this.topic, { qos: 1 }, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
+      client.subscribe(
+        [this.eventsTopic, this.panelStateTopicFilter],
+        { qos: 1 },
+        (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        },
+      );
     });
 
     console.log(
-      `[MqttSyncBus] connected broker=${this.brokerUrl} topic=${this.topic}`,
+      `[MqttSyncBus] connected broker=${this.brokerUrl} eventsTopic=${this.eventsTopic} panelStateTopicFilter=${this.panelStateTopicFilter}`,
     );
   }
 
@@ -75,9 +86,32 @@ export default class MqttSyncBus {
 
     await new Promise<void>((resolve, reject) => {
       this.client!.publish(
-        this.topic,
+        this.eventsTopic,
         JSON.stringify(message),
         { qos: 1 },
+        (error?: Error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        },
+      );
+    });
+  }
+
+  async publishPanelState(message: PanelStateMessage): Promise<void> {
+    if (!this.client) {
+      throw new Error('MQTT not connected');
+    }
+
+    const topic = this.getPanelStateTopic(message);
+
+    await new Promise<void>((resolve, reject) => {
+      this.client!.publish(
+        topic,
+        JSON.stringify(message),
+        { qos: 1, retain: true },
         (error?: Error) => {
           if (error) {
             reject(error);
@@ -92,28 +126,59 @@ export default class MqttSyncBus {
   private async handleIncomingMessage(
     topic: string,
     payload: Buffer,
-    onMessage: (message: SyncMessage) => Promise<void>,
+    handlers: {
+      onSyncMessage: (message: SyncMessage) => Promise<void>;
+      onPanelStateMessage: (message: PanelStateMessage) => Promise<void>;
+    },
   ): Promise<void> {
-    if (topic !== this.topic) {
-      return;
-    }
-
     try {
-      const message = JSON.parse(payload.toString()) as SyncMessage;
+      const message = JSON.parse(payload.toString()) as
+        | SyncMessage
+        | PanelStateMessage;
 
-      if (message.schema !== 'aircotest.sync.v4') {
+      if (topic === this.eventsTopic) {
+        if (message.schema !== 'aircotest.sync.v4') {
+          return;
+        }
+
+        if (message.sourceInstanceId === this.sourceInstanceId) {
+          return;
+        }
+
+        await handlers.onSyncMessage(message as SyncMessage);
         return;
       }
 
-      // Eigen berichten negeren is nu prima,
-      // want lokale routing doen we direct in SyncMainLoop.
-      if (message.sourceInstanceId === this.sourceInstanceId) {
+      if (!this.matchesPanelStateTopic(topic)) {
         return;
       }
 
-      await onMessage(message);
+      if (message.schema !== 'aircotest.panel-state.v1') {
+        return;
+      }
+
+      await handlers.onPanelStateMessage(message as PanelStateMessage);
     } catch (error) {
       console.error('[MqttSyncBus] invalid message', error);
     }
+  }
+
+  private getPanelStateTopic(message: PanelStateMessage): string {
+    return [
+      this.panelStateTopicBase,
+      message.zoneId,
+      message.roomId,
+      message.panelId,
+      String(message.unitId),
+      String(message.zone),
+    ].join('/');
+  }
+
+  private matchesPanelStateTopic(topic: string): boolean {
+    const expectedSegments = this.panelStateTopicFilter.split('/').length;
+    return (
+      topic.startsWith(this.panelStateTopicBase) &&
+      topic.split('/').length === expectedSegments
+    );
   }
 }
