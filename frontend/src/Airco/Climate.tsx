@@ -25,6 +25,8 @@ export default function Climate() {
   const [environmentDevices, setEnvironmentDevices] = useState<
     EnvironmentDevice[]
   >([]);
+  const [supportedEnvironmentDeviceTypes, setSupportedEnvironmentDeviceTypes] =
+    useState<string[]>([]);
 
   const [activeView, setActiveView] = useState<
     'zones' | 'aircoSystemDevices' | 'wallpanelInsights'
@@ -44,13 +46,17 @@ export default function Climate() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [zonesRes, environmentDevicesRes] = await Promise.all([
+        const [zonesRes, environmentDevicesRes, adapterTypesRes] = await Promise.all([
           axios.get('http://localhost:3000/devices'),
           axios.get('http://localhost:3000/environment-devices'),
+          axios.get('http://localhost:3000/airco-adapter-types'),
         ]);
 
         const rawEnvironmentDevices = Array.isArray(environmentDevicesRes.data)
           ? environmentDevicesRes.data
+          : [];
+        const rawAdapterTypes = Array.isArray(adapterTypesRes.data)
+          ? adapterTypesRes.data
           : [];
 
         const normalizedEnvironmentDevices = rawEnvironmentDevices.map(
@@ -60,6 +66,11 @@ export default function Climate() {
 
         setZones(normalizeZones(zonesRes.data));
         setEnvironmentDevices(normalizedEnvironmentDevices);
+        setSupportedEnvironmentDeviceTypes(
+          rawAdapterTypes
+            .map((entry: { type?: string }) => String(entry.type ?? '').trim())
+            .filter((type: string) => type.length > 0),
+        );
       } catch (err) {
         console.error('Failed to fetch climate data', err);
       }
@@ -70,6 +81,9 @@ export default function Climate() {
 
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId);
   const selectedRoom = selectedZone?.rooms.find((room) => room.id === selectedRoomId);
+  const compatibleEnvironmentDevices = environmentDevices.filter((device) =>
+    supportedEnvironmentDeviceTypes.includes(device.type),
+  );
 
   async function addEnvironmentDevice(value: {
     name: string;
@@ -194,6 +208,10 @@ export default function Climate() {
     deviceType: string;
     selectedEnvironmentDeviceId: string;
     terminalId: string;
+    roomTemparatureAddress?: string;
+    roomTemparatureSetPointAddress?: string;
+    fanspeedAddress?: string;
+    fanspeedSetPointAddress?: string;
     minTemperature: number | '';
     maxTemperature: number | '';
     minSetTemperature: number | '';
@@ -242,6 +260,10 @@ export default function Climate() {
         deviceId: selectedEnvDevice.id,
         type: selectedEnvDevice.type,
         deviceTerminalId: value.terminalId,
+        roomTemparatureAddress: value.roomTemparatureAddress,
+        roomTemparatureSetPointAddress: value.roomTemparatureSetPointAddress,
+        fanspeedAddress: value.fanspeedAddress,
+        fanspeedSetPointAddress: value.fanspeedSetPointAddress,
       },
     };
 
@@ -474,14 +496,15 @@ export default function Climate() {
             <h5 className="climate-title">Airco system devices</h5>
 
             <EnvironmentDeviceForm
+              availableTypes={supportedEnvironmentDeviceTypes}
               onSubmit={addEnvironmentDevice}
             />
 
             <div className="cards-grid" style={{ marginTop: 24 }}>
-              {environmentDevices.length === 0 ? (
+              {compatibleEnvironmentDevices.length === 0 ? (
                 <div className="empty">No airco system devices yet</div>
               ) : (
-                environmentDevices.map((device) => (
+                compatibleEnvironmentDevices.map((device) => (
                   <EnvironmentDeviceCard
                     key={device.id}
                     device={device}
@@ -501,23 +524,29 @@ export default function Climate() {
           />
         ) : (
           <>
-            <div style={{ marginBottom: 24 }}>
+            <div className="room-selector">
               {selectedZone && (
                 <>
-                  <h4>Rooms in {selectedZone.name}</h4>
-                  {selectedZone.rooms.map((room) => (
-                    <button
-                      key={room.id}
-                      className={`menu-item ${selectedRoomId === room.id ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedRoomId(room.id);
-                        setShowAircoForm(false);
-                      }}
-                      style={{ marginRight: 8, marginBottom: 8 }}
-                    >
-                      {room.name}
-                    </button>
-                  ))}
+                  <h4 className="room-selector-title">
+                    Rooms in {selectedZone.name}
+                  </h4>
+                  <div className="room-selector-list">
+                    {selectedZone.rooms.map((room) => (
+                      <button
+                        key={room.id}
+                        className={`room-chip ${
+                          selectedRoomId === room.id ? 'active' : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedRoomId(room.id);
+                          setShowAircoForm(false);
+                        }}
+                        type="button"
+                      >
+                        {room.name}
+                      </button>
+                    ))}
+                  </div>
                 </>
               )}
             </div>
@@ -571,6 +600,9 @@ export default function Climate() {
 
                     <AirconditionerForm
                       environmentDevices={environmentDevices}
+                      supportedEnvironmentDeviceTypes={
+                        supportedEnvironmentDeviceTypes
+                      }
                       onSubmit={addAirconditioner}
                       onCancel={() => {
                         setShowAircoForm(false);
@@ -590,6 +622,9 @@ export default function Climate() {
                         key={airco.id}
                         device={airco}
                         environmentDevices={environmentDevices}
+                        supportedEnvironmentDeviceTypes={
+                          supportedEnvironmentDeviceTypes
+                        }
                         onRemove={() => {
                           setAircoToDelete(airco.id);
                           setAircoModalOpen(true);

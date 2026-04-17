@@ -38,4 +38,13 @@ describe('AdapterRegistry', () => {
     expect(registry.has('hopmann')).toBe(true);
     expect(registry.has('HOPMANN')).toBe(true);
   });
+
+  it('should list registered type labels sorted by name', () => {
+    const registry = new AdapterRegistry();
+
+    registry.register('ZuluAdapter', jest.fn());
+    registry.register('AlphaAdapter', jest.fn());
+
+    expect(registry.listTypes()).toEqual(['AlphaAdapter', 'ZuluAdapter']);
+  });
 });

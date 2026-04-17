@@ -66,7 +66,11 @@ describe('SyncMainLoop', () => {
   let loop: SyncMainLoop;
 
   let repository: jest.Mocked<AircopanelRepository>;
+  let environmentDeviceRepository: any;
   let registry: jest.Mocked<AdapterRegistry>;
+  let insightsStore: {
+    applyPanelStateMessage: jest.Mock;
+  };
 
   let topologyService: {
     getRooms: jest.Mock;
@@ -75,6 +79,7 @@ describe('SyncMainLoop', () => {
   let mqtt: {
     start: jest.Mock;
     publish: jest.Mock;
+    publishPanelState: jest.Mock;
     stop: jest.Mock;
   };
 
@@ -119,17 +124,22 @@ describe('SyncMainLoop', () => {
     aircoChangeHandler = null;
 
     repository = {} as jest.Mocked<AircopanelRepository>;
+    environmentDeviceRepository = {};
     registry = {} as jest.Mocked<AdapterRegistry>;
+    insightsStore = {
+      applyPanelStateMessage: jest.fn(),
+    };
 
     topologyService = {
       getRooms: jest.fn().mockResolvedValue(ROOMS),
     };
 
     mqtt = {
-      start: jest.fn(async (handler) => {
-        remoteMessageHandler = handler;
+      start: jest.fn(async (handlers) => {
+        remoteMessageHandler = handlers.onSyncMessage;
       }),
       publish: jest.fn(),
+      publishPanelState: jest.fn(),
       stop: jest.fn(),
     };
 
@@ -163,10 +173,12 @@ describe('SyncMainLoop', () => {
 
     loop = new SyncMainLoop(
       repository,
+      environmentDeviceRepository,
       registry,
       BROKER_URL,
       TOPIC_PREFIX,
       SOURCE_INSTANCE_ID,
+      insightsStore as any,
       PANEL_LOOP_MS,
       AIRCO_LOOP_MS,
       TOPOLOGY_REFRESH_MS,
@@ -183,7 +195,14 @@ describe('SyncMainLoop', () => {
     await loop.start();
 
     expect(topologyService.getRooms).toHaveBeenCalled();
-    expect(mqtt.start).toHaveBeenCalledWith(expect.any(Function));
+    expect(TopologyService).toHaveBeenCalledWith(
+      repository,
+      environmentDeviceRepository,
+    );
+    expect(mqtt.start).toHaveBeenCalledWith({
+      onSyncMessage: expect.any(Function),
+      onPanelStateMessage: expect.any(Function),
+    });
 
     expect(panelMonitor.pollRooms).toHaveBeenCalledWith(ROOMS);
     expect(aircoMonitor.pollRooms).toHaveBeenCalledWith(ROOMS);

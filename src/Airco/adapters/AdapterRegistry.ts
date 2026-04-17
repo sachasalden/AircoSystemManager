@@ -4,9 +4,12 @@ export type AdapterFactory = (connection: AircoConnection) => AircoAdapter;
 
 export default class AdapterRegistry {
   private factories = new Map<string, AdapterFactory>();
+  private labels = new Map<string, string>();
 
   register(type: string, factory: AdapterFactory): void {
-    this.factories.set(this.normalize(type), factory);
+    const key = this.normalize(type);
+    this.factories.set(key, factory);
+    this.labels.set(key, type.trim());
   }
 
   create(type: string, connection: AircoConnection): AircoAdapter {
@@ -20,6 +23,10 @@ export default class AdapterRegistry {
 
   has(type: string): boolean {
     return this.factories.has(this.normalize(type));
+  }
+
+  listTypes(): string[] {
+    return Array.from(this.labels.values()).sort((a, b) => a.localeCompare(b));
   }
 
   private normalize(type: string): string {

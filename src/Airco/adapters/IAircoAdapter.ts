@@ -6,6 +6,11 @@ export type AircoConnection = {
   timeoutMs?: number;
   type?: string;
   model?: string;
+  bidirectional?: boolean;
+  roomTemparatureAddress?: string | number;
+  roomTemparatureSetPointAddress?: string | number;
+  fanspeedAddress?: string | number;
+  fanspeedSetPointAddress?: string | number;
 };
 
 export interface AircoAdapter {

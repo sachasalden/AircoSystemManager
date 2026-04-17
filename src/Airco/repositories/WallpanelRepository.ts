@@ -15,6 +15,11 @@ export type AirconditionerData = {
   deviceId: string;
   type: string;
   deviceTerminalId: string;
+  roomTemparatureAddress?: string | number;
+  roomTemparatureSetPointAddress?: string | number;
+  fanspeedAddress?: string | number;
+  fanspeedSetPointAddress?: string | number;
+  [key: string]: any;
 };
 
 export type AirconditionerDevice = {
@@ -164,6 +169,7 @@ export class AircopanelRepository {
       minFanspeed,
       maxFanspeed,
       data: {
+        ...(device.data ?? {}),
         deviceId: device.data?.deviceId || uuidv4(),
         type: device.data?.type ?? DEFAULT_AIRCO_ADAPTER_TYPE,
         deviceTerminalId: String(device.data?.deviceTerminalId ?? '1'),

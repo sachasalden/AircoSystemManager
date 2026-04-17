@@ -9,6 +9,7 @@ import AirconditionerForm from './AirconditionerForm';
 type AirconditionerCardProps = {
   device: AirconditionerDevice;
   environmentDevices: EnvironmentDevice[];
+  supportedEnvironmentDeviceTypes: string[];
   onRemove: () => void;
   onSave: (updated: AirconditionerDevice) => Promise<void>;
 };
@@ -16,6 +17,7 @@ type AirconditionerCardProps = {
 export default function AirconditionerCard({
   device,
   environmentDevices,
+  supportedEnvironmentDeviceTypes,
   onRemove,
   onSave,
 }: AirconditionerCardProps) {
@@ -28,6 +30,19 @@ export default function AirconditionerCard({
   );
   const [editTerminalId, setEditTerminalId] = useState(
     device.data.deviceTerminalId,
+  );
+  const [editRoomTemparatureAddress, setEditRoomTemparatureAddress] = useState(
+    String(device.data.roomTemparatureAddress ?? ''),
+  );
+  const [
+    editRoomTemparatureSetPointAddress,
+    setEditRoomTemparatureSetPointAddress,
+  ] = useState(String(device.data.roomTemparatureSetPointAddress ?? ''));
+  const [editFanspeedAddress, setEditFanspeedAddress] = useState(
+    String(device.data.fanspeedAddress ?? ''),
+  );
+  const [editFanspeedSetPointAddress, setEditFanspeedSetPointAddress] = useState(
+    String(device.data.fanspeedSetPointAddress ?? ''),
   );
 
   const [editMinTemperature, setEditMinTemperature] = useState<number | ''>(
@@ -58,6 +73,16 @@ export default function AirconditionerCard({
     setEditDeviceType(device.deviceType);
     setEditEnvironmentDeviceId(device.data.deviceId);
     setEditTerminalId(device.data.deviceTerminalId);
+    setEditRoomTemparatureAddress(
+      String(device.data.roomTemparatureAddress ?? ''),
+    );
+    setEditRoomTemparatureSetPointAddress(
+      String(device.data.roomTemparatureSetPointAddress ?? ''),
+    );
+    setEditFanspeedAddress(String(device.data.fanspeedAddress ?? ''));
+    setEditFanspeedSetPointAddress(
+      String(device.data.fanspeedSetPointAddress ?? ''),
+    );
     setEditMinTemperature(device.minTemperature);
     setEditMaxTemperature(device.maxTemperature);
     setEditMinSetTemperature(device.minSetTemperature);
@@ -72,6 +97,16 @@ export default function AirconditionerCard({
     setEditDeviceType(device.deviceType);
     setEditEnvironmentDeviceId(device.data.deviceId);
     setEditTerminalId(device.data.deviceTerminalId);
+    setEditRoomTemparatureAddress(
+      String(device.data.roomTemparatureAddress ?? ''),
+    );
+    setEditRoomTemparatureSetPointAddress(
+      String(device.data.roomTemparatureSetPointAddress ?? ''),
+    );
+    setEditFanspeedAddress(String(device.data.fanspeedAddress ?? ''));
+    setEditFanspeedSetPointAddress(
+      String(device.data.fanspeedSetPointAddress ?? ''),
+    );
     setEditMinTemperature(device.minTemperature);
     setEditMaxTemperature(device.maxTemperature);
     setEditMinSetTemperature(device.minSetTemperature);
@@ -85,6 +120,10 @@ export default function AirconditionerCard({
     deviceType: string;
     selectedEnvironmentDeviceId: string;
     terminalId: string;
+    roomTemparatureAddress?: string;
+    roomTemparatureSetPointAddress?: string;
+    fanspeedAddress?: string;
+    fanspeedSetPointAddress?: string;
     minTemperature: number | '';
     maxTemperature: number | '';
     minSetTemperature: number | '';
@@ -119,9 +158,15 @@ export default function AirconditionerCard({
         minFanspeed: value.minFanspeed === '' ? undefined : Number(value.minFanspeed),
         maxFanspeed: value.maxFanspeed === '' ? undefined : Number(value.maxFanspeed),
         data: {
+          ...device.data,
           deviceId: selectedEnvDevice.id,
           type: selectedEnvDevice.type,
           deviceTerminalId: value.terminalId,
+          roomTemparatureAddress: value.roomTemparatureAddress,
+          roomTemparatureSetPointAddress:
+            value.roomTemparatureSetPointAddress,
+          fanspeedAddress: value.fanspeedAddress,
+          fanspeedSetPointAddress: value.fanspeedSetPointAddress,
         },
       }),
     );
@@ -212,6 +257,11 @@ export default function AirconditionerCard({
               deviceType: editDeviceType,
               selectedEnvironmentDeviceId: editEnvironmentDeviceId,
               terminalId: editTerminalId,
+              roomTemparatureAddress: editRoomTemparatureAddress,
+              roomTemparatureSetPointAddress:
+                editRoomTemparatureSetPointAddress,
+              fanspeedAddress: editFanspeedAddress,
+              fanspeedSetPointAddress: editFanspeedSetPointAddress,
               minTemperature: editMinTemperature,
               maxTemperature: editMaxTemperature,
               minSetTemperature: editMinSetTemperature,
@@ -220,6 +270,7 @@ export default function AirconditionerCard({
               maxFanspeed: editMaxFanspeed,
             }}
             environmentDevices={environmentDevices}
+            supportedEnvironmentDeviceTypes={supportedEnvironmentDeviceTypes}
             onSubmit={saveEdit}
             submitLabel="Save"
             resetLabel="Cancel"

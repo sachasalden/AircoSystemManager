@@ -1,11 +1,13 @@
 import TopologyService from '../src/Airco/services/TopologyService';
 import { AircopanelRepository } from '../src/Airco/repositories/WallpanelRepository';
+import { EnvironmentDeviceRepository } from '../src/Airco/repositories/EnvironmentDeviceRepository';
 
 describe('TopologyService', () => {
   const TEST_ZONE_ID = 'zone-1';
   const TEST_ROOM_ID = 'room-1';
 
   let repository: jest.Mocked<AircopanelRepository>;
+  let environmentDeviceRepository: jest.Mocked<EnvironmentDeviceRepository>;
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -22,6 +24,10 @@ describe('TopologyService', () => {
       getDevices: jest.fn(),
       getAircoDevices: jest.fn(),
     } as unknown as jest.Mocked<AircopanelRepository>;
+
+    environmentDeviceRepository = {
+      getDevices: jest.fn(),
+    } as unknown as jest.Mocked<EnvironmentDeviceRepository>;
   });
 
   afterAll(() => {
@@ -70,7 +76,10 @@ describe('TopologyService', () => {
       {
         id: 'airco-1',
         deviceType: 'FC-500PC/FC-1100PC',
-        data: { type: 'HeinAndHopmanIpSystem' },
+        data: {
+          deviceId: 'environment-device-1',
+          type: 'HeinAndHopmanIpSystem',
+        },
         zoneId: 'zone-1',
         roomId: 'room-1',
       },
@@ -83,7 +92,18 @@ describe('TopologyService', () => {
       },
     ] as any);
 
-    const service = new TopologyService(repository);
+    environmentDeviceRepository.getDevices.mockResolvedValue([
+      {
+        id: 'environment-device-1',
+        name: 'DEV Server emulator',
+        type: 'HeinAndHopmanIpSystem',
+        ip: '192.168.55.10',
+        port: '502',
+        bidirectional: true,
+      },
+    ]);
+
+    const service = new TopologyService(repository, environmentDeviceRepository);
     const result = await service.getRooms();
 
     console.log('TopologyService result:', JSON.stringify(result, null, 2));
@@ -106,7 +126,18 @@ describe('TopologyService', () => {
           {
             id: 'airco-1',
             deviceType: 'FC-500PC/FC-1100PC',
-            data: { type: 'HeinAndHopmanIpSystem' },
+            data: {
+              deviceId: 'environment-device-1',
+              type: 'HeinAndHopmanIpSystem',
+            },
+            environmentDevice: {
+              id: 'environment-device-1',
+              name: 'DEV Server emulator',
+              type: 'HeinAndHopmanIpSystem',
+              ip: '192.168.55.10',
+              port: 502,
+              bidirectional: true,
+            },
           },
         ],
       },
@@ -124,8 +155,9 @@ describe('TopologyService', () => {
 
     repository.getDevices.mockResolvedValue([] as any);
     repository.getAircoDevices.mockResolvedValue([] as any);
+    environmentDeviceRepository.getDevices.mockResolvedValue([]);
 
-    const service = new TopologyService(repository);
+    const service = new TopologyService(repository, environmentDeviceRepository);
     const result = await service.getRooms();
 
     console.log('TopologyService empty result:', result);
@@ -143,8 +175,9 @@ describe('TopologyService', () => {
 
     repository.getDevices.mockResolvedValue([] as any);
     repository.getAircoDevices.mockResolvedValue([] as any);
+    environmentDeviceRepository.getDevices.mockResolvedValue([]);
 
-    const service = new TopologyService(repository);
+    const service = new TopologyService(repository, environmentDeviceRepository);
     const result = await service.getRooms();
 
     console.log('TopologyService no rooms result:', result);
@@ -170,8 +203,9 @@ describe('TopologyService', () => {
 
     repository.getDevices.mockResolvedValue([] as any);
     repository.getAircoDevices.mockResolvedValue([] as any);
+    environmentDeviceRepository.getDevices.mockResolvedValue([]);
 
-    const service = new TopologyService(repository);
+    const service = new TopologyService(repository, environmentDeviceRepository);
     const result = await service.getRooms();
 
     console.log('TopologyService default env result:', result);

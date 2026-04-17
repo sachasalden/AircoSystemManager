@@ -25,6 +25,7 @@ import { AircopanelRepository } from './repositories/WallpanelRepository';
 import createWallpanelInsightsRoute from './routes/WallpanelInsightsRoute';
 import createDevicesRoute from './routes/DevicesRoute';
 import createAircoDevicesRoute from './routes/AircoDevicesRoute';
+import createAircoAdapterTypesRoute from './routes/AircoAdapterTypesRoute';
 import createEnvironmentDevicesRoute from './routes/EnvironmentDevicesRoute';
 import WallpanelInsightsStore from './services/WallpanelInsightsStore';
 
@@ -64,6 +65,7 @@ registerDefaultAdapters(registry);
 
 const syncMainLoop = new SyncMainLoop(
   repository,
+  environmentDeviceRepository,
   registry,
   mqttBrokerUrl,
   mqttTopicPrefix,
@@ -77,6 +79,7 @@ app.use(
 );
 app.use('/devices', createDevicesRoute(controller, deviceService));
 app.use('/airco-devices', createAircoDevicesRoute(aircoDeviceController));
+app.use('/airco-adapter-types', createAircoAdapterTypesRoute(registry));
 app.use(
   '/environment-devices',
   createEnvironmentDevicesRoute(environmentDeviceController),

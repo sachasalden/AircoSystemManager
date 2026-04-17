@@ -1,5 +1,5 @@
 import AdapterRegistry from '../adapters/AdapterRegistry';
-import type { AircoAdapter } from '../adapters/IAircoAdapter';
+import type { AircoAdapter, AircoConnection } from '../adapters/IAircoAdapter';
 import SyncEchoGuard from './SyncEchoGuard';
 import {
   AIRCO_TO_PANEL_PROPERTIES,
@@ -25,8 +25,6 @@ export default class AircoMonitor {
         'schema' | 'messageId' | 'timestamp' | 'sourceInstanceId'
       >,
     ) => Promise<void>,
-    private host = process.env.AIRCO_HOST || '192.168.55.10',
-    private port = Number(process.env.AIRCO_PORT || 502),
   ) {}
 
   async pollRooms(rooms: TopologyRoom[]): Promise<void> {
@@ -35,17 +33,22 @@ export default class AircoMonitor {
         const type = airco.data?.type;
         const model = airco.deviceType;
         const unitId = Number(airco.data?.deviceTerminalId);
+        const host = airco.environmentDevice?.ip;
+        const port = airco.environmentDevice?.port;
 
-        if (!type || !Number.isFinite(unitId)) {
+        if (!type || !Number.isFinite(unitId) || !host || !Number.isFinite(port)) {
+          console.warn('[AircoMonitor] skipped poll due to missing environment device', {
+            roomId: room.roomId,
+            aircoId: airco.id,
+            environmentDeviceId: airco.data?.deviceId,
+          });
           continue;
         }
 
-        const adapter = this.registry.create(type, {
-          host: this.host,
-          port: this.port,
+        const adapter = this.registry.create(
           type,
-          model,
-        });
+          this.createConnection(airco, host, port, type, model),
+        );
 
         try {
           await adapter.connect();
@@ -96,17 +99,25 @@ export default class AircoMonitor {
       const type = airco.data?.type;
       const model = airco.deviceType;
       const unitId = Number(airco.data?.deviceTerminalId);
+      const host = airco.environmentDevice?.ip;
+      const port = airco.environmentDevice?.port;
 
-      if (!type || !Number.isFinite(unitId)) {
+      if (!type || !Number.isFinite(unitId) || !host || !Number.isFinite(port)) {
+        console.warn(
+          '[AircoMonitor] skipped panel->airco apply due to missing environment device',
+          {
+            roomId: room.roomId,
+            aircoId: airco.id,
+            environmentDeviceId: airco.data?.deviceId,
+          },
+        );
         continue;
       }
 
-      const adapter = this.registry.create(type, {
-        host: this.host,
-        port: this.port,
+      const adapter = this.registry.create(
         type,
-        model,
-      });
+        this.createConnection(airco, host, port, type, model),
+      );
 
       try {
         console.log('[AircoMonitor] applying panel change locally', {
@@ -203,6 +214,23 @@ export default class AircoMonitor {
         value,
       });
     }
+  }
+
+  private createConnection(
+    airco: TopologyRoom['aircos'][number],
+    host: string,
+    port: number,
+    type: string,
+    model?: string,
+  ): AircoConnection {
+    return {
+      ...airco.data,
+      host,
+      port,
+      type,
+      model,
+      bidirectional: airco.environmentDevice?.bidirectional,
+    };
   }
 
   private async readSnapshot(

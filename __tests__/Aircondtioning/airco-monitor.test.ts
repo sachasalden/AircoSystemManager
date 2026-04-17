@@ -43,6 +43,19 @@ describe('AircoMonitor', () => {
           data: {
             type: TYPE,
             deviceTerminalId: UNIT_ID,
+            deviceId: 'environment-device-1',
+            roomTemparatureAddress: '40001',
+            roomTemparatureSetPointAddress: '40002',
+            fanspeedAddress: '40003',
+            fanspeedSetPointAddress: '40004',
+          },
+          environmentDevice: {
+            id: 'environment-device-1',
+            name: 'Airco system',
+            type: TYPE,
+            ip: HOST,
+            port: PORT,
+            bidirectional: true,
           },
         },
       ],
@@ -98,8 +111,6 @@ describe('AircoMonitor', () => {
       registry,
       echoGuard as unknown as SyncEchoGuard,
       onAircoChange,
-      HOST,
-      PORT,
     );
   });
 
@@ -124,6 +135,13 @@ describe('AircoMonitor', () => {
       port: PORT,
       type: TYPE,
       model: MODEL,
+      bidirectional: true,
+      deviceId: 'environment-device-1',
+      deviceTerminalId: UNIT_ID,
+      roomTemparatureAddress: '40001',
+      roomTemparatureSetPointAddress: '40002',
+      fanspeedAddress: '40003',
+      fanspeedSetPointAddress: '40004',
     });
     expect(adapter.connect).toHaveBeenCalledTimes(1);
     expect(adapter.disconnect).toHaveBeenCalledTimes(1);
@@ -226,6 +244,13 @@ describe('AircoMonitor', () => {
       port: PORT,
       type: TYPE,
       model: MODEL,
+      bidirectional: true,
+      deviceId: 'environment-device-1',
+      deviceTerminalId: UNIT_ID,
+      roomTemparatureAddress: '40001',
+      roomTemparatureSetPointAddress: '40002',
+      fanspeedAddress: '40003',
+      fanspeedSetPointAddress: '40004',
     });
     expect(adapter.connect).toHaveBeenCalled();
     expect(adapter.setSetpoint).toHaveBeenCalledWith(UNIT_ID, ZONE_1, 23.5);

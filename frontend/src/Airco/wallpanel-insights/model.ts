@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction } from 'react';
+  import { type Dispatch, type SetStateAction } from 'react';
 
 export type InsightZone = {
   id: string;
@@ -24,9 +24,6 @@ export type InsightZoneSnapshot = {
   virtualTemperature?: number;
   fanSpeed?: number;
   fanMode?: number;
-  flags?: number;
-  pendingSetpoint?: number;
-  pendingFanMode?: number;
   error?: string;
 };
 

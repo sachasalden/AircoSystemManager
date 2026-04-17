@@ -42,6 +42,11 @@ export type AirconditionerDevice = {
     deviceId: string;
     type: string;
     deviceTerminalId: string;
+    roomTemparatureAddress?: string | number;
+    roomTemparatureSetPointAddress?: string | number;
+    fanspeedAddress?: string | number;
+    fanspeedSetPointAddress?: string | number;
+    [key: string]: unknown;
   };
   zoneId?: string;
   roomId?: string;
@@ -170,6 +175,7 @@ export function normalizeAirconditionerDevice(
     minFanspeed,
     maxFanspeed,
     data: {
+      ...(device?.data ?? {}),
       deviceId: String(device?.data?.deviceId ?? ''),
       type: String(device?.data?.type ?? AIRCO_ADAPTER_TYPES[0]),
       deviceTerminalId: String(device?.data?.deviceTerminalId ?? ''),

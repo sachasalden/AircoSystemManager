@@ -6,6 +6,7 @@ import PolarbearMonitor from '../src/Airco/services/PolarbearMonitor';
 import AircoMonitor from '../src/Airco/services/AircoMonitor';
 import {
   createMessageId,
+  type PanelStateMessage,
   type SyncMessage,
   type TopologyRoom,
 } from '../src/Airco/services/SyncTypes';
@@ -90,6 +91,7 @@ describe('SyncMainLoop', () => {
     start: jest.Mock;
     stop: jest.Mock;
     publish: jest.Mock;
+    publishPanelState: jest.Mock;
   };
 
   let echoGuardMock: {
@@ -126,8 +128,14 @@ describe('SyncMainLoop', () => {
     | undefined;
 
   let mqttMessageHandler: ((message: SyncMessage) => Promise<void>) | undefined;
+  let panelStateMessageHandler:
+    | ((message: PanelStateMessage) => Promise<void>)
+    | undefined;
 
   let loop: SyncMainLoop;
+  let insightsStoreMock: {
+    applyPanelStateMessage: jest.Mock;
+  };
 
   const flush = async () => {
     await Promise.resolve();
@@ -146,11 +154,13 @@ describe('SyncMainLoop', () => {
     };
 
     mqttMock = {
-      start: jest.fn().mockImplementation(async (handler) => {
-        mqttMessageHandler = handler;
+      start: jest.fn().mockImplementation(async (handlers) => {
+        mqttMessageHandler = handlers.onSyncMessage;
+        panelStateMessageHandler = handlers.onPanelStateMessage;
       }),
       stop: jest.fn().mockResolvedValue(undefined),
       publish: jest.fn().mockResolvedValue(undefined),
+      publishPanelState: jest.fn().mockResolvedValue(undefined),
     };
 
     echoGuardMock = {
@@ -166,6 +176,10 @@ describe('SyncMainLoop', () => {
     aircoMonitorMock = {
       pollRooms: jest.fn().mockResolvedValue(undefined),
       applyPanelChangeLocally: jest.fn().mockResolvedValue(undefined),
+    };
+
+    insightsStoreMock = {
+      applyPanelStateMessage: jest.fn(),
     };
 
     (TopologyService as unknown as jest.Mock).mockImplementation(
@@ -195,9 +209,11 @@ describe('SyncMainLoop', () => {
     loop = new SyncMainLoop(
       {} as any,
       {} as any,
+      {} as any,
       BROKER_URL,
       TOPIC_PREFIX,
       SOURCE_INSTANCE_ID,
+      insightsStoreMock as any,
       PANEL_LOOP_MS,
       AIRCO_LOOP_MS,
       TOPOLOGY_REFRESH_MS,
@@ -212,6 +228,7 @@ describe('SyncMainLoop', () => {
     await loop.start();
 
     expect(TopologyService).toHaveBeenCalled();
+    expect(TopologyService).toHaveBeenCalledWith({}, {});
     expect(MqttSyncBus).toHaveBeenCalledWith(
       BROKER_URL,
       SOURCE_INSTANCE_ID,
@@ -342,6 +359,31 @@ describe('SyncMainLoop', () => {
       remoteMessage,
     );
     expect(aircoMonitorMock.applyPanelChangeLocally).not.toHaveBeenCalled();
+  });
+
+  it('should apply remote panel state mqtt messages to insights store', async () => {
+    await loop.start();
+
+    const panelStateMessage: PanelStateMessage = {
+      schema: 'aircotest.panel-state.v1',
+      sourceInstanceId: 'other-instance',
+      timestamp: FIXED_TIMESTAMP,
+      zoneId: 'zone-1',
+      roomId: 'room-1',
+      panelId: 'panel-1',
+      unitId: 1,
+      zone: 1,
+      setpoint: 21,
+      virtualTemperature: 20.5,
+      fanSpeed: 2,
+      fanMode: 3,
+    };
+
+    await panelStateMessageHandler!(panelStateMessage);
+
+    expect(insightsStoreMock.applyPanelStateMessage).toHaveBeenCalledWith(
+      panelStateMessage,
+    );
   });
 
   it('should stop timers, panel monitor and mqtt', async () => {

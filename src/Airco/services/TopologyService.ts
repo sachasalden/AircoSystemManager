@@ -3,6 +3,10 @@ import {
   type Device,
   type AirconditionerDevice,
 } from '../repositories/WallpanelRepository';
+import {
+  EnvironmentDeviceRepository,
+  type EnvironmentDevice,
+} from '../repositories/EnvironmentDeviceRepository';
 import type { TopologyRoom } from './SyncTypes';
 
 type ZoneDoc = {
@@ -21,13 +25,16 @@ export default class TopologyService {
   private readonly TEST_ROOM_ID =
     process.env.TEST_ROOM_ID?.trim() || '2134af85-4377-2330-af2d-72143bec6574';
 
-  constructor(private repository: AircopanelRepository) {}
+  constructor(
+    private repository: AircopanelRepository,
+    private environmentDeviceRepository: EnvironmentDeviceRepository,
+  ) {}
 
   async getRooms(): Promise<TopologyRoom[]> {
     console.log('[TopologyService] TEST_ZONE_ID =', this.TEST_ZONE_ID);
     console.log('[TopologyService] TEST_ROOM_ID =', this.TEST_ROOM_ID);
 
-    const [zones, panels, aircos] = await Promise.all([
+    const [zones, panels, aircos, environmentDevices] = await Promise.all([
       this.repository.getZones() as Promise<ZoneDoc[]>,
       this.repository.getDevices() as Promise<
         (Device & {
@@ -41,6 +48,7 @@ export default class TopologyService {
           roomId: string;
         })[]
       >,
+      this.environmentDeviceRepository.getDevices() as Promise<EnvironmentDevice[]>,
     ]);
 
     const rooms: TopologyRoom[] = [];
@@ -79,11 +87,28 @@ export default class TopologyService {
               d.zoneId?.toString().trim() === zoneId &&
               d.roomId?.toString().trim() === roomId,
           )
-          .map((d) => ({
-            id: d.id,
-            deviceType: d.deviceType,
-            data: d.data,
-          }));
+          .map((d) => {
+            const linkedEnvironmentDevice = environmentDevices.find(
+              (environmentDevice) =>
+                environmentDevice.id === d.data?.deviceId,
+            );
+
+            return {
+              id: d.id,
+              deviceType: d.deviceType,
+              data: d.data,
+              environmentDevice: linkedEnvironmentDevice
+                ? {
+                    id: linkedEnvironmentDevice.id,
+                    name: linkedEnvironmentDevice.name,
+                    type: linkedEnvironmentDevice.type,
+                    ip: linkedEnvironmentDevice.ip,
+                    port: Number(linkedEnvironmentDevice.port),
+                    bidirectional: linkedEnvironmentDevice.bidirectional,
+                  }
+                : undefined,
+            };
+          });
 
         rooms.push({
           zoneId,

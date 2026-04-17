@@ -14,6 +14,10 @@ type AirconditionerFormValue = {
   deviceType: string;
   selectedEnvironmentDeviceId: string;
   terminalId: string;
+  roomTemparatureAddress?: string;
+  roomTemparatureSetPointAddress?: string;
+  fanspeedAddress?: string;
+  fanspeedSetPointAddress?: string;
   minTemperature: number | '';
   maxTemperature: number | '';
   minSetTemperature: number | '';
@@ -25,6 +29,7 @@ type AirconditionerFormValue = {
 type AirconditionerFormProps = {
   initialValue?: Partial<AirconditionerFormValue>;
   environmentDevices: EnvironmentDevice[];
+  supportedEnvironmentDeviceTypes: string[];
   onSubmit: (value: AirconditionerFormValue) => void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -34,6 +39,7 @@ type AirconditionerFormProps = {
 export default function AirconditionerForm({
   initialValue,
   environmentDevices,
+  supportedEnvironmentDeviceTypes,
   onSubmit,
   onCancel,
   submitLabel = 'Add',
@@ -49,6 +55,19 @@ export default function AirconditionerForm({
       '',
   );
   const [terminalId, setTerminalId] = useState(initialValue?.terminalId ?? '');
+  const [roomTemparatureAddress, setRoomTemparatureAddress] = useState(
+    initialValue?.roomTemparatureAddress ?? '',
+  );
+  const [
+    roomTemparatureSetPointAddress,
+    setRoomTemparatureSetPointAddress,
+  ] = useState(initialValue?.roomTemparatureSetPointAddress ?? '');
+  const [fanspeedAddress, setFanspeedAddress] = useState(
+    initialValue?.fanspeedAddress ?? '',
+  );
+  const [fanspeedSetPointAddress, setFanspeedSetPointAddress] = useState(
+    initialValue?.fanspeedSetPointAddress ?? '',
+  );
   const [minTemperature, setMinTemperature] = useState<number | ''>(
     initialValue?.minTemperature ?? 16,
   );
@@ -69,35 +88,51 @@ export default function AirconditionerForm({
   );
 
   const compatibleEnvironmentDevices = environmentDevices.filter(
-    (env) => env.type === 'HeinAndHopmanIpSystem',
+    (env) => supportedEnvironmentDeviceTypes.includes(env.type),
   );
+  const selectedEnvironmentDevice = compatibleEnvironmentDevices.find(
+    (env) => env.id === selectedEnvironmentDeviceId,
+  );
+  const defaultEnvironmentDeviceId = compatibleEnvironmentDevices[0]?.id ?? '';
+  const needsRegisterAddresses =
+    selectedEnvironmentDevice?.type === 'HeinEnHopmanGooiland';
 
   useEffect(() => {
     setName(initialValue?.name ?? '');
     setDeviceType(initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0]);
     setSelectedEnvironmentDeviceId(
       initialValue?.selectedEnvironmentDeviceId ??
-        environmentDevices[0]?.id ??
-        '',
+        defaultEnvironmentDeviceId,
     );
     setTerminalId(initialValue?.terminalId ?? '');
+    setRoomTemparatureAddress(initialValue?.roomTemparatureAddress ?? '');
+    setRoomTemparatureSetPointAddress(
+      initialValue?.roomTemparatureSetPointAddress ?? '',
+    );
+    setFanspeedAddress(initialValue?.fanspeedAddress ?? '');
+    setFanspeedSetPointAddress(initialValue?.fanspeedSetPointAddress ?? '');
     setMinTemperature(initialValue?.minTemperature ?? 16);
     setMaxTemperature(initialValue?.maxTemperature ?? 30);
     setMinSetTemperature(initialValue?.minSetTemperature ?? 16);
     setMaxSetTemperature(initialValue?.maxSetTemperature ?? 30);
     setMinFanspeed(initialValue?.minFanspeed ?? 0);
     setMaxFanspeed(initialValue?.maxFanspeed ?? 4);
-  }, [environmentDevices, initialValue]);
+  }, [defaultEnvironmentDeviceId, initialValue]);
 
   function resetForm() {
     setName(initialValue?.name ?? '');
     setDeviceType(initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0]);
     setSelectedEnvironmentDeviceId(
       initialValue?.selectedEnvironmentDeviceId ??
-        environmentDevices[0]?.id ??
-        '',
+        defaultEnvironmentDeviceId,
     );
     setTerminalId(initialValue?.terminalId ?? '');
+    setRoomTemparatureAddress(initialValue?.roomTemparatureAddress ?? '');
+    setRoomTemparatureSetPointAddress(
+      initialValue?.roomTemparatureSetPointAddress ?? '',
+    );
+    setFanspeedAddress(initialValue?.fanspeedAddress ?? '');
+    setFanspeedSetPointAddress(initialValue?.fanspeedSetPointAddress ?? '');
     setMinTemperature(initialValue?.minTemperature ?? 16);
     setMaxTemperature(initialValue?.maxTemperature ?? 30);
     setMinSetTemperature(initialValue?.minSetTemperature ?? 16);
@@ -140,6 +175,42 @@ export default function AirconditionerForm({
         <TextInput value={terminalId} onChange={setTerminalId} />
       </Field>
 
+      {needsRegisterAddresses && (
+        <>
+          <Field label="Room temp address">
+            <TextInput
+              value={roomTemparatureAddress}
+              onChange={setRoomTemparatureAddress}
+              placeholder="e.g. 40001"
+            />
+          </Field>
+
+          <Field label="Setpoint address">
+            <TextInput
+              value={roomTemparatureSetPointAddress}
+              onChange={setRoomTemparatureSetPointAddress}
+              placeholder="e.g. 40002"
+            />
+          </Field>
+
+          <Field label="Fan speed address">
+            <TextInput
+              value={fanspeedAddress}
+              onChange={setFanspeedAddress}
+              placeholder="e.g. 40003"
+            />
+          </Field>
+
+          <Field label="Fan setpoint address">
+            <TextInput
+              value={fanspeedSetPointAddress}
+              onChange={setFanspeedSetPointAddress}
+              placeholder="e.g. 40004"
+            />
+          </Field>
+        </>
+      )}
+
       <Field label="Min temperature">
         <NumberInput value={minTemperature} onChange={setMinTemperature} />
       </Field>
@@ -172,6 +243,10 @@ export default function AirconditionerForm({
               deviceType,
               selectedEnvironmentDeviceId,
               terminalId,
+              roomTemparatureAddress,
+              roomTemparatureSetPointAddress,
+              fanspeedAddress,
+              fanspeedSetPointAddress,
               minTemperature,
               maxTemperature,
               minSetTemperature,

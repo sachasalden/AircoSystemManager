@@ -1,5 +1,6 @@
 import AdapterRegistry from '../adapters/AdapterRegistry';
 import { AircopanelRepository } from '../repositories/WallpanelRepository';
+import { EnvironmentDeviceRepository } from '../repositories/EnvironmentDeviceRepository';
 import TopologyService from './TopologyService';
 import MqttSyncBus from './MqttSyncBus';
 import SyncEchoGuard from './SyncEchoGuard';
@@ -28,6 +29,7 @@ export default class SyncMainLoop {
 
   constructor(
     repository: AircopanelRepository,
+    environmentDeviceRepository: EnvironmentDeviceRepository,
     registry: AdapterRegistry,
     brokerUrl: string,
     topicPrefix: string,
@@ -39,7 +41,10 @@ export default class SyncMainLoop {
       process.env.TOPOLOGY_REFRESH_MS || 10000,
     ),
   ) {
-    this.topologyService = new TopologyService(repository);
+    this.topologyService = new TopologyService(
+      repository,
+      environmentDeviceRepository,
+    );
     this.mqtt = new MqttSyncBus(brokerUrl, sourceInstanceId, topicPrefix);
     this.echoGuard = new SyncEchoGuard(15000);
 

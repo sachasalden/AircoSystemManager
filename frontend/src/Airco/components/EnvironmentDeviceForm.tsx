@@ -18,15 +18,21 @@ type EnvironmentDeviceFormValue = {
 
 type EnvironmentDeviceFormProps = {
   initialValue?: Partial<EnvironmentDeviceFormValue>;
+  availableTypes: string[];
   onSubmit: (value: EnvironmentDeviceFormValue) => void;
 };
 
 export default function EnvironmentDeviceForm({
   initialValue,
+  availableTypes,
   onSubmit,
 }: EnvironmentDeviceFormProps) {
+  const typeOptions =
+    availableTypes.length > 0 ? availableTypes : [...AIRCO_ADAPTER_TYPES];
+  const defaultType = typeOptions[0] ?? '';
+
   const [name, setName] = useState(initialValue?.name ?? 'New');
-  const [type, setType] = useState(initialValue?.type ?? 'HeinAndHopmanIpSystem');
+  const [type, setType] = useState(initialValue?.type ?? defaultType);
   const [ip, setIp] = useState(initialValue?.ip ?? '');
   const [port, setPort] = useState(initialValue?.port ?? '502');
   const [bidirectional, setBidirectional] = useState(
@@ -35,15 +41,15 @@ export default function EnvironmentDeviceForm({
 
   useEffect(() => {
     setName(initialValue?.name ?? 'New');
-    setType(initialValue?.type ?? 'HeinAndHopmanIpSystem');
+    setType(initialValue?.type ?? defaultType);
     setIp(initialValue?.ip ?? '');
     setPort(initialValue?.port ?? '502');
     setBidirectional(initialValue?.bidirectional ?? true);
-  }, [initialValue]);
+  }, [initialValue, defaultType]);
 
   function resetForm() {
     setName(initialValue?.name ?? 'New');
-    setType(initialValue?.type ?? 'HeinAndHopmanIpSystem');
+    setType(initialValue?.type ?? defaultType);
     setIp(initialValue?.ip ?? '');
     setPort(initialValue?.port ?? '502');
     setBidirectional(initialValue?.bidirectional ?? true);
@@ -61,7 +67,7 @@ export default function EnvironmentDeviceForm({
 
       <Field label="Type" span={2}>
         <SelectInput value={type} onChange={setType}>
-          {AIRCO_ADAPTER_TYPES.map((adapterType) => (
+          {typeOptions.map((adapterType) => (
             <option key={adapterType} value={adapterType}>
               {adapterType}
             </option>

@@ -25,9 +25,6 @@ export default function WallpanelInsightUnitCard({
                 <p>Virtual temp: {valueOrDash(zone.virtualTemperature)}°</p>
                 <p>Fan speed: {valueOrDash(zone.fanSpeed)}</p>
                 <p>Fan mode: {valueOrDash(zone.fanMode)}</p>
-                <p>Flags: {valueOrDash(zone.flags)}</p>
-                <p>Pending setpoint: {valueOrDash(zone.pendingSetpoint)}°</p>
-                <p>Pending fan mode: {valueOrDash(zone.pendingFanMode)}</p>
               </>
             )}
           </div>

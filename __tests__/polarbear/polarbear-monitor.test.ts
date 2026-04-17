@@ -59,6 +59,7 @@ describe('PolarbearMonitor', () => {
   };
 
   let onPanelChange: jest.Mock;
+  let onSnapshot: jest.Mock;
 
   let clientQueue: ClientMock[];
   let serviceQueue: ServiceMock[];
@@ -166,6 +167,7 @@ describe('PolarbearMonitor', () => {
     };
 
     onPanelChange = jest.fn().mockResolvedValue(undefined);
+    onSnapshot = jest.fn().mockResolvedValue(undefined);
 
     clientQueue = [];
     serviceQueue = [];
@@ -187,6 +189,7 @@ describe('PolarbearMonitor', () => {
     monitor = new PolarbearMonitor(
       echoGuard as unknown as SyncEchoGuard,
       onPanelChange,
+      onSnapshot,
       MODBUS_TIMEOUT_MS,
       REQUEST_GAP_MS,
     );
@@ -214,6 +217,38 @@ describe('PolarbearMonitor', () => {
       ZONE_2,
     );
     expect(service.getFlags).toHaveBeenCalledTimes(2);
+    expect(onSnapshot).toHaveBeenNthCalledWith(
+      1,
+      {
+        zoneId: 'zone-1',
+        roomId: 'room-1',
+        panelId: 'panel-1',
+        unitId: UNIT_10,
+        zone: ZONE_1,
+      },
+      {
+        setpoint: SETPOINT,
+        virtualTemperature: VIRTUAL_TEMP_1,
+        fanSpeed: FAN_SPEED,
+        fanMode: FAN_MODE,
+      },
+    );
+    expect(onSnapshot).toHaveBeenNthCalledWith(
+      2,
+      {
+        zoneId: 'zone-1',
+        roomId: 'room-1',
+        panelId: 'panel-1',
+        unitId: UNIT_10,
+        zone: ZONE_2,
+      },
+      {
+        setpoint: SETPOINT,
+        virtualTemperature: VIRTUAL_TEMP_1,
+        fanSpeed: FAN_SPEED,
+        fanMode: FAN_MODE,
+      },
+    );
     expect(onPanelChange).not.toHaveBeenCalled();
   });
 

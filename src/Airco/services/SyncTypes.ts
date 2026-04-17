@@ -53,6 +53,14 @@ export type TopologyRoom = {
     id: string;
     deviceType?: string;
     data?: Record<string, any>;
+    environmentDevice?: {
+      id: string;
+      name: string;
+      type: string;
+      ip: string;
+      port: number;
+      bidirectional: boolean;
+    };
   }>;
 };
 

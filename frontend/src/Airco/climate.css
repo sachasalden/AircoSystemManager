@@ -214,6 +214,71 @@
   color: #f5f7fb;
 }
 
+.room-selector {
+  margin-bottom: 24px;
+}
+
+.room-selector-title {
+  margin: 0 0 10px 0;
+  color: #f5f7fb;
+}
+
+.room-selector-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.room-chip {
+  appearance: none;
+  border: 1px solid rgba(92, 214, 175, 0.42);
+  border-radius: 999px;
+  padding: 9px 15px;
+  background: linear-gradient(
+          135deg,
+          rgba(35, 181, 126, 0.24),
+          rgba(75, 156, 255, 0.18)
+  );
+  color: #effff8;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 24px rgba(6, 21, 32, 0.22);
+  transition:
+          background 140ms ease,
+          border-color 140ms ease,
+          box-shadow 140ms ease,
+          transform 100ms ease;
+}
+
+.room-chip:hover {
+  border-color: rgba(92, 214, 175, 0.76);
+  background: linear-gradient(
+          135deg,
+          rgba(35, 181, 126, 0.38),
+          rgba(75, 156, 255, 0.28)
+  );
+  box-shadow: 0 14px 30px rgba(6, 21, 32, 0.3);
+  transform: translateY(-1px);
+}
+
+.room-chip:focus-visible {
+  outline: none;
+  box-shadow:
+          0 0 0 3px rgba(92, 214, 175, 0.22),
+          0 14px 30px rgba(6, 21, 32, 0.3);
+}
+
+.room-chip.active {
+  border-color: rgba(92, 214, 175, 0.95);
+  background: linear-gradient(135deg, #35b57f, #2f93c8);
+  color: #ffffff;
+  box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.24),
+          0 16px 34px rgba(12, 120, 95, 0.34);
+}
+
 /* ✅ Form as grid */
 .climate-form {
   display: grid;
