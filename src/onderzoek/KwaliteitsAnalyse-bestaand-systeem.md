@@ -55,7 +55,7 @@ Bij deze analyse is gebruikgemaakt van de volgende referentiekaders en standaard
 
 Deze combinatie van methoden en standaarden biedt een passend kader om de backend op een gestructureerde manier te beoordelen.
 
-## 3.2. Welke aandachtspunten zijn er op het gebied van beschikbaarheid?
+## 3.2. Welke aandachtspuntexn zijn er op het gebied van beschikbaarheid?
 
 ### 3.2.1. Methoden
 Voor dit onderdeel is vooral gekeken naar socket-afhandeling, timeouts, reconnect-logica, polling-mechanismen en foutafhandeling binnen de device-communicatie.
