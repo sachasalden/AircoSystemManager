@@ -1,53 +1,95 @@
-@startuml AirconModule_and_Polarbear_Architecture
+@startuml AirconModule_and_WallPanel_Architecture
 
-package "airconModule" {
-  interface AirconditionerController {
-    +setTemperature(airconditioner, temperature): Promise
-    +setFanSpeed(airconditioner, speed): Promise
+package "apiModule" {
+  class AirconFactory {
+    +getAirconditionerImplementation(device: Device): AirconditionerController
+    +getAirconditionerImplementations(): AirconditionerController[]
   }
 
-  class airconditionerControllerImpl implements AirconditionerController
-  class condariaControllerImpl implements AirconditionerController
-  class heinEnHopmanControllerImpl implements AirconditionerController
-  class heinEnHopmanGooilandControllerImpl implements AirconditionerController
-  class heinEnHopmanIpControllerImpl implements AirconditionerController
-  class johnsonAcControllerImpl implements AirconditionerController
-  class vecoControllerImpl implements AirconditionerController
+  class PolarbearFactory {
+    +getPolarbearImplementation(acpanel: AcPanel, deviceRepository: DeviceRepository, airconFactory: AirconFactory, logger: Logger): Ipolarbear
+  }
+
+  class Main {
+    -airconFactory: AirconFactory
+    -polarbearFactory: PolarbearFactory
+    -polarbearCode: number
+    +updateAircoPanel(polarbearCode): Promise<void>
+    +updateAircoData(): Promise<void>
+  }
 }
 
-package "wallPanel" {
-  class PolarbearController {
+package "domotics/airconModule" {
+  interface AirconditionerController {
+    +setTemperature(airconditioner, newTemperature): Promise<Airconditioner>
+    +getTemperature(airconditioner): Promise<Airconditioner>
+    +setFanSpeed(airconditioner, newFanSpeed): Promise<Airconditioner>
+    +getFanSpeed(airconditioner): Promise<Airconditioner>
+    +getAllData(airconditioner): Promise<Airconditioner>
+    +getDeviceId(): String
+  }
+
+  class CondariaControllerImpl
+  class HeinEnHopmanControllerImpl
+  class HeinEnHopmanGooilandControllerImpl
+  class HeinEnHopmanIpControllerImpl
+  class JohnsonAcControllerImpl
+  class VecoControllerImpl
+}
+
+package "domotics/wallPanel" {
+  interface Ipolarbear {
+    +updateAcPanels(airconditioners): Airconditioner[]
+    +getDeviceId(): String
+  }
+
+  class "PolarbearController (v1)" as PolarbearControllerV1 {
     -connection: any
     -deviceRepository: DeviceRepository
     -airconFactory: AirconFactory
     +updateAcPanels(acpanel, airconditioners): Airconditioner[]
-    -updateAcPanel(id, airconditioners, acpanel): Promise
-    -getValues(id): Promise
-    -setValues(id, airconditioners, acpanel): Promise
-    -setCurrentTemperatures(id, airconditioners, acpanelType): Promise
-    -checkAcPanelUserInput(id): Promise
-    -send(connection, message): Promise
     +closeConnection(): void
   }
 
-  interface IPolarbear {
-    +updateAcPanels(acpanel, airconditioners): Airconditioner[]
+  class "PolarbearController (v2/v3)" as PolarbearControllerV2 implements Ipolarbear {
+    -connection: any
+    -acpanel: AcPanel
+    -deviceRepository: DeviceRepository
+    -airconFactory: AirconFactory
+    -logger: Logger
+    +updateAcPanels(airconditioners): Airconditioner[]
+    +getDeviceId(): String
+    +closeConnection(): void
   }
 }
 
 package "entities" {
+  class Device {
+    +id: string
+    +type: string
+    +name: string
+    +bidirectional: boolean
+  }
+
   class Airconditioner {
+    +maxTemperature: number
+    +minTemperature: number
+    +maxSetTemperature: number
+    +minSetTemperature: number
     +setTemperature: number
     +currentTemperature: number
     +currentFanspeed: number
     +maxFanspeed: number
-    +data: object
+    +minFanspeed: number
+    +data: any
   }
-}
 
-package "factory" {
-  class AirconFactory {
-    +getAirconditionerImplementation(device): AirconditionerController
+  class AcPanel {
+    +id: String
+    +ip: String
+    +type: String
+    +port: String
+    +ids: String[]
   }
 }
 
@@ -57,11 +99,49 @@ package "database" {
   }
 }
 
-PolarbearController --> DeviceRepository
-PolarbearController --> AirconFactory
-PolarbearController --> Airconditioner
-PolarbearController --> AirconditionerController
+package "libraries" {
+  class Logger
+  class "modbus-rtu" as ModbusRtu {
+    +createRtuMessage(...)
+    +decodeRtuResponse(...)
+  }
+}
+
+Airconditioner --|> Device
+
+CondariaControllerImpl ..|> AirconditionerController
+HeinEnHopmanControllerImpl ..|> AirconditionerController
+HeinEnHopmanGooilandControllerImpl ..|> AirconditionerController
+HeinEnHopmanIpControllerImpl ..|> AirconditionerController
+JohnsonAcControllerImpl ..|> AirconditionerController
+VecoControllerImpl ..|> AirconditionerController
+
 AirconFactory --> AirconditionerController
+AirconFactory --> Device
+
+PolarbearFactory --> Ipolarbear
+PolarbearFactory --> AirconFactory
+PolarbearFactory --> DeviceRepository
+PolarbearFactory --> Logger
+
+PolarbearControllerV1 --> DeviceRepository
+PolarbearControllerV1 --> AirconFactory
+PolarbearControllerV1 --> Airconditioner
+PolarbearControllerV1 --> AirconditionerController
+PolarbearControllerV1 --> ModbusRtu
+
+PolarbearControllerV2 --> AcPanel
+PolarbearControllerV2 --> DeviceRepository
+PolarbearControllerV2 --> AirconFactory
+PolarbearControllerV2 --> Airconditioner
+PolarbearControllerV2 --> AirconditionerController
+PolarbearControllerV2 --> Logger
+PolarbearControllerV2 --> ModbusRtu
+
 AirconditionerController --> Airconditioner
+
+Main --> AirconFactory
+Main --> PolarbearFactory
+Main --> PolarbearControllerV1
 
 @enduml

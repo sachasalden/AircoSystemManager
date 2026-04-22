@@ -1,2 +1,374 @@
 @startuml
+title Aircotest systeem - klassendiagram
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+package "API / Application" {
+  class PolarbearController {
+    -timeout: number
+    -client: ModbusClient
+    -service: PolarbearService
+    +connect(host, port): Promise<void>
+    +disconnect(): Promise<void>
+    +getTemperature(unitId, zone): Promise<number>
+    +setTemperature(unitId, zone, temperature): Promise<void>
+    +getVirtualTemperature(unitId, zone): Promise<number>
+    +setVirtualTemperature(unitId, zone, temperature): Promise<void>
+    +getFanSpeed(unitId, zone): Promise<number>
+    +setFanSpeed(unitId, zone, speed): Promise<void>
+    +getFanMode(unitId, zone): Promise<number>
+    +setFanMode(unitId, zone, mode): Promise<void>
+    +getRoomWallpanelInsights(zoneId, roomId)
+  }
+
+  class AircoDeviceController {
+    +getDevices()
+    +addDevice(device)
+    +getDeviceById(deviceId)
+    +updateDevice(device)
+    +deleteDevice(deviceId)
+  }
+
+  class EnvironmentDeviceController {
+    +getDevices(): Promise<EnvironmentDevice[]>
+    +getDeviceById(id): Promise<EnvironmentDevice>
+    +addDevice(device): Promise<EnvironmentDevice>
+    +updateDevice(id, device): Promise<EnvironmentDevice>
+    +deleteDevice(id): Promise<string>
+  }
+
+  class EnvironmentDeviceService {
+    +getDevices(): Promise<EnvironmentDevice[]>
+    +getDeviceById(id): Promise<EnvironmentDevice>
+    +addDevice(device): Promise<EnvironmentDevice>
+    +updateDevice(id, device): Promise<EnvironmentDevice>
+    +deleteDevice(id): Promise<string>
+  }
+
+  class DeviceService {
+    +getDeviceTree()
+  }
+
+  class AircoController <<legacy/direct control>> {
+    -AIRCO_HOST: string
+    -AIRCO_PORT: number
+    +getDevices()
+    +getSetpoint(deviceId, unitId, zone): Promise<number>
+    +setSetpoint(deviceId, unitId, zone, temperature): Promise<void>
+    +getVirtualTemperature(deviceId, unitId, zone): Promise<number>
+    +setVirtualTemperature(deviceId, unitId, zone, temperature): Promise<void>
+    +getFanSpeed(deviceId, unitId, zone): Promise<number>
+    +setFanSpeed(deviceId, unitId, zone, speed): Promise<void>
+    +getFanMode(deviceId, unitId, zone): Promise<number>
+    +setFanMode(deviceId, unitId, zone, mode): Promise<void>
+  }
+}
+
+package "Synchronization Core" {
+  class SyncMainLoop {
+    -rooms: TopologyRoom[]
+    -panelTimer: Timeout
+    -aircoTimer: Timeout
+    -topologyTimer: Timeout
+    -sourceInstanceId: string
+    +start(): Promise<void>
+    +stop(): Promise<void>
+  }
+
+  class TopologyService {
+    -TEST_ZONE_ID: string
+    -TEST_ROOM_ID: string
+    +getRooms(): Promise<TopologyRoom[]>
+  }
+
+  class PolarbearMonitor {
+    -connections: Map<ConnectionKey, ConnectionState>
+    -lastState: Map<string, number>
+    -lastFlags: Map<string, number>
+    +pollRooms(rooms): Promise<void>
+    +applyAircoChangeLocally(rooms, message): Promise<void>
+    +stop(): Promise<void>
+  }
+
+  class AircoMonitor {
+    -lastState: Map<string, number>
+    +pollRooms(rooms): Promise<void>
+    +applyPanelChangeLocally(rooms, message): Promise<void>
+  }
+
+  class MqttSyncBus {
+    -brokerUrl: string
+    -sourceInstanceId: string
+    -eventsTopic: string
+    +start(handlers): Promise<void>
+    +stop(): Promise<void>
+    +publish(message): Promise<void>
+    +publishPanelState(message): Promise<void>
+  }
+
+  class SyncEchoGuard {
+    -entries: Map<string, EchoEntry>
+    -ttlMs: number
+    +remember(deviceId, unitId, zone, property, value): void
+    +consumeIfExpected(deviceId, unitId, zone, property, value): boolean
+    +cleanup(): void
+  }
+
+  class WallpanelInsightsStore {
+    -panels: Map<string, InsightPanelState>
+    -listeners: Set<Listener>
+    +applySnapshot(panelId, unitId, zone, snapshot, updatedAt): void
+    +applyPanelStateMessage(message): void
+    +getPanelState(panelId)
+    +subscribe(listener)
+  }
+}
+
+package "Airco Adapters" {
+  interface AircoAdapter {
+    +connect(): Promise<void>
+    +disconnect(): Promise<void>
+    +getSetpoint(unitId, zone): Promise<number>
+    +setSetpoint(unitId, zone, temperature): Promise<void>
+    +getVirtualTemperature(unitId, zone): Promise<number>
+    +setVirtualTemperature(unitId, zone, temperature): Promise<void>
+    +getFanSpeed(unitId, zone): Promise<number>
+    +setFanSpeed(unitId, zone, speed): Promise<void>
+    +getFanMode(unitId, zone): Promise<number>
+    +setFanMode(unitId, zone, mode): Promise<void>
+  }
+
+  class AdapterRegistry {
+    -factories: Map<string, AdapterFactory>
+    -labels: Map<string, string>
+    +register(type, factory): void
+    +create(type, connection): AircoAdapter
+    +has(type): boolean
+    +listTypes(): string[]
+  }
+
+  class HopmannAdapter {
+    -connection: AircoConnection
+  }
+
+  class HeinEnHopmanGooilandAdapter {
+    -connection: AircoConnection
+  }
+
+  class AircoConnection <<type>> {
+    +host: string
+    +port: number
+    +timeoutMs: number
+    +type: string
+    +model: string
+    +bidirectional: boolean
+  }
+}
+
+package "Panel / Modbus Integration" {
+  class ModbusClient {
+    -client: ModbusRTU
+    -connected: boolean
+    -lastHost: string
+    -lastPort: number
+    +connect(host, port): Promise<void>
+    +disconnect(): Promise<void>
+    +setID(id): void
+    +readHoldingRegisters(register, count): Promise<number[]>
+    +writeRegister(register, value): Promise<void>
+  }
+
+  class PolarbearService {
+    -detectedVersions: Map<number, string>
+    +getSetpoint(unitId, zone): Promise<number>
+    +setSetpoint(unitId, zone, temperature): Promise<void>
+    +getVirtualTemperature(unitId, zone): Promise<number>
+    +setVirtualTemperature(unitId, zone, temperature): Promise<void>
+    +getFanSpeed(unitId, zone): Promise<number>
+    +setFanSpeed(unitId, zone, speed): Promise<void>
+    +getFanMode(unitId, zone): Promise<number>
+    +setFanMode(unitId, zone, mode): Promise<void>
+    +getFlags(unitId): Promise<number>
+    +getSnapshot(unitId, zone)
+  }
+}
+
+package "Persistence" {
+  class AircopanelRepository {
+    -dbName: string
+    -collectionName: string
+    +getZones()
+    +getDevices()
+    +getAircoDevices()
+    +getDeviceById(deviceId)
+    +getAircoDeviceById(deviceId)
+    +addDevice(device)
+    +addAircoDevice(device)
+    +updateDevice(device)
+    +updateAircoDevice(device)
+    +deleteDevice(deviceId)
+    +deleteAircoDevice(deviceId)
+  }
+
+  class EnvironmentDeviceRepository {
+    -dbName: string
+    -collectionName: string
+    +getDevices(): Promise<EnvironmentDevice[]>
+    +getDeviceById(id): Promise<EnvironmentDevice>
+    +addDevice(device): Promise<EnvironmentDevice>
+    +updateDevice(id, device): Promise<EnvironmentDevice>
+    +deleteDevice(id): Promise<string>
+  }
+}
+
+package "Data Types" {
+  class TopologyRoom <<type>> {
+    +zoneId: string
+    +roomId: string
+    +roomName: string
+    +panels: TopologyPanel[]
+    +aircos: TopologyAirco[]
+  }
+
+  class TopologyPanel <<type>> {
+    +id: string
+    +ip: string
+    +port: number
+    +ids: number[]
+    +type: string
+  }
+
+  class TopologyAirco <<type>> {
+    +id: string
+    +deviceType: string
+    +data: AirconditionerData
+    +environmentDevice: EnvironmentDevice
+  }
+
+  class PanelDevice <<type>> {
+    +id: string
+    +ip: string
+    +port: number
+    +ids: number[]
+    +type: string
+  }
+
+  class AirconditionerDevice <<type>> {
+    +id: string
+    +deviceType: string
+    +data: AirconditionerData
+  }
+
+  class AirconditionerData <<type>> {
+    +deviceId: string
+    +type: string
+    +deviceTerminalId: string
+  }
+
+  class EnvironmentDevice <<type>> {
+    +id: string
+    +name: string
+    +type: string
+    +ip: string
+    +port: string
+    +bidirectional: boolean
+  }
+
+  class SyncMessage <<type>> {
+    +origin: SyncOrigin
+    +zoneId: string
+    +roomId: string
+    +deviceId: string
+    +unitId: number
+    +zone: Zone
+    +property: SyncProperty
+    +value: number
+  }
+
+  class PanelStateMessage <<type>> {
+    +zoneId: string
+    +roomId: string
+    +panelId: string
+    +unitId: number
+    +zone: Zone
+    +setpoint: number
+    +virtualTemperature: number
+    +fanSpeed: number
+    +fanMode: number
+  }
+}
+
+AircoAdapter <|.. HopmannAdapter
+AircoAdapter <|.. HeinEnHopmanGooilandAdapter
+AdapterRegistry ..> AircoAdapter : creates
+HopmannAdapter --> AircoConnection
+HeinEnHopmanGooilandAdapter --> AircoConnection
+
+PolarbearController *-- ModbusClient
+PolarbearController *-- PolarbearService
+PolarbearController --> AircopanelRepository
+PolarbearController --> WallpanelInsightsStore
+PolarbearService --> ModbusClient
+
+DeviceService --> AircopanelRepository
+AircoDeviceController --> AircopanelRepository
+AircoController --> AdapterRegistry
+AircoController --> AircopanelRepository
+AircoController ..> AircoAdapter
+EnvironmentDeviceController --> EnvironmentDeviceService
+EnvironmentDeviceService --> EnvironmentDeviceRepository
+
+SyncMainLoop *-- TopologyService
+SyncMainLoop *-- MqttSyncBus
+SyncMainLoop *-- SyncEchoGuard
+SyncMainLoop *-- PolarbearMonitor
+SyncMainLoop *-- AircoMonitor
+SyncMainLoop --> WallpanelInsightsStore
+
+TopologyService --> AircopanelRepository
+TopologyService --> EnvironmentDeviceRepository
+TopologyService ..> TopologyRoom
+
+PolarbearMonitor --> SyncEchoGuard
+PolarbearMonitor ..> PolarbearService
+PolarbearMonitor ..> ModbusClient
+PolarbearMonitor ..> TopologyRoom
+PolarbearMonitor ..> SyncMessage
+
+AircoMonitor --> AdapterRegistry
+AircoMonitor --> SyncEchoGuard
+AircoMonitor ..> AircoAdapter
+AircoMonitor ..> TopologyRoom
+AircoMonitor ..> SyncMessage
+
+MqttSyncBus ..> SyncMessage
+MqttSyncBus ..> PanelStateMessage
+WallpanelInsightsStore ..> PanelStateMessage
+AircopanelRepository ..> PanelDevice
+AircopanelRepository ..> AirconditionerDevice
+AirconditionerDevice --> AirconditionerData
+TopologyRoom --> TopologyPanel
+TopologyRoom --> TopologyAirco
+TopologyAirco --> AirconditionerData
+TopologyAirco --> EnvironmentDevice
+
+note bottom of SyncMainLoop
+  Centrale orchestrator:
+  ververst topology, pollt panelen en airco's,
+  filtert echo's en synchroniseert via MQTT.
+end note
+
+note bottom of TopologyService
+  Bouwt de runtime-topologie per room
+  door panel devices, airco devices en
+  environment devices te koppelen.
+end note
+
+note right of AircoController
+  Bestaat naast de nieuwere SyncMainLoop-flow
+  als directe adaptergestuurde control-path.
+end note
+
 @enduml
