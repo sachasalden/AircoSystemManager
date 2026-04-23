@@ -87,7 +87,7 @@ export default class SyncMainLoop {
         const panelStateMessage: PanelStateMessage = {
           schema: 'aircotest.panel-state.v1',
           sourceInstanceId: this.sourceInstanceId,
-          timestamp: new Date().toISOString(),
+          timestamp: context.timestamp,
           zoneId: context.zoneId,
           roomId: context.roomId,
           panelId: context.panelId,

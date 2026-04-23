@@ -1,5 +1,4 @@
-import ModbusClient from '../clients/ModbusClient';
-import PolarbearService from './PolarbearService';
+import WallpanelPoller, { type FullSnapshot } from './WallpanelPoller';
 import SyncEchoGuard from './SyncEchoGuard';
 import {
   PANEL_TO_AIRCO_PROPERTIES,
@@ -16,14 +15,21 @@ type Snapshot = Record<SyncProperty, number>;
 type ConnectionKey = string;
 
 type ConnectionState = {
-  client: ModbusClient;
-  service: PolarbearService;
-  isConnected: boolean;
+  poller: WallpanelPoller;
+  unitIds: number[];
+};
+
+type SnapshotContext = {
+  zoneId: string;
+  roomId: string;
+  panelId: string;
+  unitId: number;
+  zone: Zone;
+  timestamp: string;
 };
 
 export default class PolarbearMonitor {
   private connections = new Map<ConnectionKey, ConnectionState>();
-  private connQueues = new Map<ConnectionKey, Promise<void>>();
   private lastState = new Map<string, number>();
   private lastFlags = new Map<string, number>();
 
@@ -36,13 +42,7 @@ export default class PolarbearMonitor {
       >,
     ) => Promise<void>,
     private onSnapshot: (
-      context: {
-        zoneId: string;
-        roomId: string;
-        panelId: string;
-        unitId: number;
-        zone: Zone;
-      },
+      context: SnapshotContext,
       snapshot: Snapshot,
     ) => void | Promise<void>,
     private modbusTimeoutMs = 10000,
@@ -52,12 +52,11 @@ export default class PolarbearMonitor {
   async stop(): Promise<void> {
     for (const conn of this.connections.values()) {
       try {
-        await conn.client.disconnect();
+        await conn.poller.stop();
       } catch {}
     }
 
     this.connections.clear();
-    this.connQueues.clear();
   }
 
   async pollRooms(rooms: TopologyRoom[]): Promise<void> {
@@ -68,28 +67,26 @@ export default class PolarbearMonitor {
         }
 
         try {
-          const conn = await this.ensureConnection(panel.ip, panel.port);
-          const connKey = this.getConnKey(panel.ip, panel.port);
+          const conn = await this.ensureConnection(
+            panel.ip,
+            panel.port,
+            panel.ids,
+          );
 
           for (const unitId of panel.ids) {
+            const snapshot = await conn.poller.getSnapshot(unitId);
+
             for (const zone of [1, 2] as const) {
-              const snapshot = await this.readSnapshot(
-                conn.service,
-                connKey,
-                unitId,
-                zone,
-              );
-
-              await this.handleSnapshot(room, panel.id, unitId, zone, snapshot);
-
-              await this.detectFlags(
+              await this.handleSnapshot(
                 room,
                 panel.id,
                 unitId,
                 zone,
-                conn.service,
-                connKey,
+                this.toSyncSnapshot(snapshot, zone),
+                snapshot.timestamp,
               );
+
+              await this.detectFlags(room, panel.id, unitId, zone, conn.poller);
             }
           }
         } catch (error) {
@@ -123,42 +120,47 @@ export default class PolarbearMonitor {
     }
 
     for (const panel of room.panels) {
+      if (!panel.ids.length) {
+        continue;
+      }
+
       try {
-        const conn = await this.ensureConnection(panel.ip, panel.port);
-        const connKey = this.getConnKey(panel.ip, panel.port);
+        const conn = await this.ensureConnection(
+          panel.ip,
+          panel.port,
+          panel.ids,
+        );
 
-        await this.enqueueWithGap(connKey, async () => {
-          for (const unitId of panel.ids) {
-            console.log('[PolarbearMonitor] applying airco change locally', {
-              panelId: panel.id,
-              unitId,
-              property: message.property,
-              value: message.value,
-              zone: message.zone,
-            });
+        for (const unitId of panel.ids) {
+          console.log('[PolarbearMonitor] applying airco change locally', {
+            panelId: panel.id,
+            unitId,
+            property: message.property,
+            value: message.value,
+            zone: message.zone,
+          });
 
-            await this.writeProperty(
-              conn.service,
-              unitId,
-              message.zone,
-              message.property,
-              message.value,
-            );
+          await this.writeProperty(
+            conn.poller,
+            unitId,
+            message.zone,
+            message.property,
+            message.value,
+          );
 
-            this.echoGuard.remember(
-              panel.id,
-              unitId,
-              message.zone,
-              message.property,
-              message.value,
-            );
+          this.echoGuard.remember(
+            panel.id,
+            unitId,
+            message.zone,
+            message.property,
+            message.value,
+          );
 
-            this.lastState.set(
-              createStateKey(panel.id, unitId, message.zone, message.property),
-              message.value,
-            );
-          }
-        });
+          this.lastState.set(
+            createStateKey(panel.id, unitId, message.zone, message.property),
+            message.value,
+          );
+        }
       } catch (error) {
         console.error(
           `[PolarbearMonitor] applyAircoChangeLocally failed panel=${panel.id}`,
@@ -173,12 +175,9 @@ export default class PolarbearMonitor {
     panelId: string,
     unitId: number,
     zone: Zone,
-    service: PolarbearService,
-    connKey: string,
+    poller: WallpanelPoller,
   ): Promise<void> {
-    const flags = await this.enqueueWithGap(connKey, () =>
-      service.getFlags(unitId),
-    );
+    const flags = await poller.getFlags(unitId);
     const lastFlagKey = `${panelId}:${unitId}:flags:${zone}`;
     const prevFlags = this.lastFlags.get(lastFlagKey);
     this.lastFlags.set(lastFlagKey, flags);
@@ -191,13 +190,9 @@ export default class PolarbearMonitor {
     const fanModeBit = zone === 1 ? 0x0002 : 0x0200;
 
     if ((flags & setpointBit) !== 0) {
-      const value = await this.enqueueWithGap(connKey, () =>
-        service.getPendingSetpoint(unitId, zone),
-      );
+      const value = await poller.getPendingSetpoint(unitId, zone);
 
-      await this.enqueueWithGap(connKey, () =>
-        service.clearFlag(unitId, zone, 'setpoint', flags),
-      );
+      await poller.clearFlag(unitId, zone, 'setpoint', flags);
 
       await this.handleLocalPanelChange(
         room,
@@ -210,13 +205,9 @@ export default class PolarbearMonitor {
     }
 
     if ((flags & fanModeBit) !== 0) {
-      const value = await this.enqueueWithGap(connKey, () =>
-        service.getPendingFanMode(unitId, zone),
-      );
+      const value = await poller.getPendingFanMode(unitId, zone);
 
-      await this.enqueueWithGap(connKey, () =>
-        service.clearFlag(unitId, zone, 'fanMode', flags),
-      );
+      await poller.clearFlag(unitId, zone, 'fanMode', flags);
 
       await this.handleLocalPanelChange(
         room,
@@ -290,48 +281,53 @@ export default class PolarbearMonitor {
     }
 
     for (const panel of room.panels) {
+      if (!panel.ids.length) {
+        continue;
+      }
+
       try {
-        const conn = await this.ensureConnection(panel.ip, panel.port);
-        const connKey = this.getConnKey(panel.ip, panel.port);
+        const conn = await this.ensureConnection(
+          panel.ip,
+          panel.port,
+          panel.ids,
+        );
 
-        await this.enqueueWithGap(connKey, async () => {
-          for (const targetUnitId of panel.ids) {
-            if (panel.id === sourcePanelId && targetUnitId === sourceUnitId) {
-              continue;
-            }
-
-            console.log('[PolarbearMonitor] syncing sibling panel', {
-              sourcePanelId,
-              sourceUnitId,
-              targetPanelId: panel.id,
-              targetUnitId,
-              zone,
-              property,
-              value,
-            });
-
-            await this.writeProperty(
-              conn.service,
-              targetUnitId,
-              zone,
-              property,
-              value,
-            );
-
-            this.echoGuard.remember(
-              panel.id,
-              targetUnitId,
-              zone,
-              property,
-              value,
-            );
-
-            this.lastState.set(
-              createStateKey(panel.id, targetUnitId, zone, property),
-              value,
-            );
+        for (const targetUnitId of panel.ids) {
+          if (panel.id === sourcePanelId && targetUnitId === sourceUnitId) {
+            continue;
           }
-        });
+
+          console.log('[PolarbearMonitor] syncing sibling panel', {
+            sourcePanelId,
+            sourceUnitId,
+            targetPanelId: panel.id,
+            targetUnitId,
+            zone,
+            property,
+            value,
+          });
+
+          await this.writeProperty(
+            conn.poller,
+            targetUnitId,
+            zone,
+            property,
+            value,
+          );
+
+          this.echoGuard.remember(
+            panel.id,
+            targetUnitId,
+            zone,
+            property,
+            value,
+          );
+
+          this.lastState.set(
+            createStateKey(panel.id, targetUnitId, zone, property),
+            value,
+          );
+        }
       } catch (error) {
         console.error(
           `[PolarbearMonitor] syncSiblingPanels failed panel=${panel.id}`,
@@ -347,6 +343,7 @@ export default class PolarbearMonitor {
     unitId: number,
     zone: Zone,
     snapshot: Snapshot,
+    timestamp: string,
   ): Promise<void> {
     await this.onSnapshot(
       {
@@ -355,6 +352,7 @@ export default class PolarbearMonitor {
         panelId,
         unitId,
         zone,
+        timestamp,
       },
       snapshot,
     );
@@ -404,30 +402,19 @@ export default class PolarbearMonitor {
     }
   }
 
-  private async readSnapshot(
-    service: PolarbearService,
-    connKey: string,
-    unitId: number,
-    zone: Zone,
-  ): Promise<Snapshot> {
+  private toSyncSnapshot(snapshot: FullSnapshot, zone: Zone): Snapshot {
+    const zoneSnapshot = zone === 1 ? snapshot.zone1 : snapshot.zone2;
+
     return {
-      setpoint: await this.enqueueWithGap(connKey, () =>
-        service.getSetpoint(unitId, zone),
-      ),
-      virtualTemperature: await this.enqueueWithGap(connKey, () =>
-        service.getVirtualTemperature(unitId, zone),
-      ),
-      fanSpeed: await this.enqueueWithGap(connKey, () =>
-        service.getFanSpeed(unitId, zone),
-      ),
-      fanMode: await this.enqueueWithGap(connKey, () =>
-        service.getFanMode(unitId, zone),
-      ),
+      setpoint: zoneSnapshot.setpoint,
+      virtualTemperature: zoneSnapshot.virtualTemp,
+      fanSpeed: zoneSnapshot.fanSpeed,
+      fanMode: zoneSnapshot.fanMode,
     };
   }
 
   private async writeProperty(
-    service: PolarbearService,
+    poller: WallpanelPoller,
     unitId: number,
     zone: Zone,
     property: SyncProperty,
@@ -435,16 +422,16 @@ export default class PolarbearMonitor {
   ): Promise<void> {
     switch (property) {
       case 'setpoint':
-        await service.setSetpoint(unitId, zone, value);
+        await poller.setSetpoint(unitId, zone, value);
         return;
       case 'virtualTemperature':
-        await service.setVirtualTemperature(unitId, zone, value);
+        await poller.setVirtualTemp(unitId, zone, value);
         return;
       case 'fanSpeed':
-        await service.setFanSpeed(unitId, zone, value);
+        await poller.setFanSpeed(unitId, zone, value);
         return;
       case 'fanMode':
-        await service.setFanMode(unitId, zone, value);
+        await poller.setFanMode(unitId, zone, value);
         return;
     }
   }
@@ -453,50 +440,63 @@ export default class PolarbearMonitor {
     return `${ip}:${port}`;
   }
 
-  private async ensureConnection(ip: string, port: number) {
+  private async ensureConnection(
+    ip: string,
+    port: number,
+    unitIds: number[],
+  ): Promise<ConnectionState> {
     const key = this.getConnKey(ip, port);
+    const nextUnitIds = this.normalizeUnitIds(unitIds);
 
-    if (!this.connections.has(key)) {
-      const client = new ModbusClient(this.modbusTimeoutMs);
-      const service = new PolarbearService(client);
-      this.connections.set(key, { client, service, isConnected: false });
+    if (!nextUnitIds.length) {
+      throw new Error(`Geen geldige unitIds voor wallpanel ${key}.`);
     }
 
-    const conn = this.connections.get(key)!;
+    const existing = this.connections.get(key);
 
-    if (!conn.isConnected) {
-      await conn.client.connect(ip, port);
-      conn.isConnected = true;
+    if (existing) {
+      const mergedUnitIds = this.mergeUnitIds(existing.unitIds, nextUnitIds);
+
+      if (mergedUnitIds.length === existing.unitIds.length) {
+        return existing;
+      }
+
+      await existing.poller.stop();
+      return this.createConnection(key, ip, port, mergedUnitIds);
     }
+
+    return this.createConnection(key, ip, port, nextUnitIds);
+  }
+
+  private createConnection(
+    key: string,
+    host: string,
+    port: number,
+    unitIds: number[],
+  ): ConnectionState {
+    const conn = {
+      poller: new WallpanelPoller({
+        host,
+        port,
+        unitIds,
+        minInterMessageGapMs: this.requestGapMs,
+        timeoutMs: this.modbusTimeoutMs,
+      }),
+      unitIds,
+    };
+
+    this.connections.set(key, conn);
 
     return conn;
   }
 
-  private enqueue<T>(connKey: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.connQueues.get(connKey) ?? Promise.resolve();
-
-    const next = previous
-      .catch(() => undefined)
-      .then(fn)
-      .finally(() => undefined);
-
-    this.connQueues.set(
-      connKey,
-      next.then(() => undefined).catch(() => undefined),
-    );
-
-    return next;
+  private normalizeUnitIds(unitIds: number[]): number[] {
+    return [...new Set(unitIds)]
+      .filter((unitId) => Number.isFinite(unitId))
+      .sort((a, b) => a - b);
   }
 
-  private enqueueWithGap<T>(connKey: string, fn: () => Promise<T>): Promise<T> {
-    return this.enqueue(connKey, async () => {
-      const result = await fn();
-
-      if (this.requestGapMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.requestGapMs));
-      }
-
-      return result;
-    });
+  private mergeUnitIds(current: number[], next: number[]): number[] {
+    return this.normalizeUnitIds([...current, ...next]);
   }
 }

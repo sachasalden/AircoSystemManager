@@ -1,15 +1,9 @@
 import PolarbearMonitor from '../../src/Airco/services/PolarbearMonitor';
-import ModbusClient from '../../src/Airco/clients/ModbusClient';
-import PolarbearService from '../../src/Airco/services/PolarbearService';
+import WallpanelPoller from '../../src/Airco/services/WallpanelPoller';
 import type SyncEchoGuard from '../../src/Airco/services/SyncEchoGuard';
 import type { SyncMessage, TopologyRoom } from '../../src/Airco/services/SyncTypes';
 
-jest.mock('../../src/Airco/clients/ModbusClient', () => ({
-  __esModule: true,
-  default: jest.fn(),
-}));
-
-jest.mock('../../src/Airco/services/PolarbearService', () => ({
+jest.mock('../../src/Airco/services/WallpanelPoller', () => ({
   __esModule: true,
   default: jest.fn(),
 }));
@@ -30,22 +24,16 @@ describe('PolarbearMonitor', () => {
   const VIRTUAL_TEMP_2 = 23.0;
   const FAN_SPEED = 3;
   const FAN_MODE = 2;
+  const SNAPSHOT_TIMESTAMP = '2026-03-25T10:00:00.000Z';
 
   const PANEL_SETPOINT_FLAG_ZONE_1 = 0x0001;
 
-  type ClientMock = {
-    connect: jest.Mock;
-    disconnect: jest.Mock;
-  };
-
-  type ServiceMock = {
-    getSetpoint: jest.Mock;
+  type PollerMock = {
+    stop: jest.Mock;
+    getSnapshot: jest.Mock;
     setSetpoint: jest.Mock;
-    getVirtualTemperature: jest.Mock;
-    setVirtualTemperature: jest.Mock;
-    getFanSpeed: jest.Mock;
+    setVirtualTemp: jest.Mock;
     setFanSpeed: jest.Mock;
-    getFanMode: jest.Mock;
     setFanMode: jest.Mock;
     getFlags: jest.Mock;
     clearFlag: jest.Mock;
@@ -61,11 +49,8 @@ describe('PolarbearMonitor', () => {
   let onPanelChange: jest.Mock;
   let onSnapshot: jest.Mock;
 
-  let clientQueue: ClientMock[];
-  let serviceQueue: ServiceMock[];
-
-  let createdClients: ClientMock[];
-  let createdServices: ServiceMock[];
+  let pollerQueue: PollerMock[];
+  let createdPollers: PollerMock[];
 
   let monitor: PolarbearMonitor;
 
@@ -124,23 +109,41 @@ describe('PolarbearMonitor', () => {
     zone: ZONE_1,
     property: 'fanMode',
     value: FAN_MODE,
-    timestamp: '2026-03-25T10:00:00.000Z',
+    timestamp: SNAPSHOT_TIMESTAMP,
     ...overrides,
   });
 
-  const createClientMock = (): ClientMock => ({
-    connect: jest.fn().mockResolvedValue(undefined),
-    disconnect: jest.fn().mockResolvedValue(undefined),
+  const makeFullSnapshot = (
+    unitId: number,
+    zone1VirtualTemp = VIRTUAL_TEMP_1,
+    zone2VirtualTemp = VIRTUAL_TEMP_1,
+  ) => ({
+    unitId,
+    zone1: {
+      setpoint: SETPOINT,
+      virtualTemp: zone1VirtualTemp,
+      fanSpeed: FAN_SPEED,
+      fanMode: FAN_MODE,
+    },
+    zone2: {
+      setpoint: SETPOINT,
+      virtualTemp: zone2VirtualTemp,
+      fanSpeed: FAN_SPEED,
+      fanMode: FAN_MODE,
+    },
+    timestamp: SNAPSHOT_TIMESTAMP,
   });
 
-  const createServiceMock = (): ServiceMock => ({
-    getSetpoint: jest.fn().mockResolvedValue(SETPOINT),
+  const createPollerMock = (): PollerMock => ({
+    stop: jest.fn().mockResolvedValue(undefined),
+    getSnapshot: jest
+      .fn()
+      .mockImplementation((unitId: number) =>
+        Promise.resolve(makeFullSnapshot(unitId)),
+      ),
     setSetpoint: jest.fn().mockResolvedValue(undefined),
-    getVirtualTemperature: jest.fn().mockResolvedValue(VIRTUAL_TEMP_1),
-    setVirtualTemperature: jest.fn().mockResolvedValue(undefined),
-    getFanSpeed: jest.fn().mockResolvedValue(FAN_SPEED),
+    setVirtualTemp: jest.fn().mockResolvedValue(undefined),
     setFanSpeed: jest.fn().mockResolvedValue(undefined),
-    getFanMode: jest.fn().mockResolvedValue(FAN_MODE),
     setFanMode: jest.fn().mockResolvedValue(undefined),
     getFlags: jest.fn().mockResolvedValue(0),
     clearFlag: jest.fn().mockResolvedValue(undefined),
@@ -148,14 +151,10 @@ describe('PolarbearMonitor', () => {
     getPendingFanMode: jest.fn().mockResolvedValue(4),
   });
 
-  const queueConnection = () => {
-    const client = createClientMock();
-    const service = createServiceMock();
-
-    clientQueue.push(client);
-    serviceQueue.push(service);
-
-    return { client, service };
+  const queuePoller = () => {
+    const poller = createPollerMock();
+    pollerQueue.push(poller);
+    return poller;
   };
 
   beforeEach(() => {
@@ -169,21 +168,13 @@ describe('PolarbearMonitor', () => {
     onPanelChange = jest.fn().mockResolvedValue(undefined);
     onSnapshot = jest.fn().mockResolvedValue(undefined);
 
-    clientQueue = [];
-    serviceQueue = [];
-    createdClients = [];
-    createdServices = [];
+    pollerQueue = [];
+    createdPollers = [];
 
-    (ModbusClient as unknown as jest.Mock).mockImplementation(() => {
-      const client = clientQueue.shift() ?? createClientMock();
-      createdClients.push(client);
-      return client;
-    });
-
-    (PolarbearService as unknown as jest.Mock).mockImplementation(() => {
-      const service = serviceQueue.shift() ?? createServiceMock();
-      createdServices.push(service);
-      return service;
+    (WallpanelPoller as unknown as jest.Mock).mockImplementation(() => {
+      const poller = pollerQueue.shift() ?? createPollerMock();
+      createdPollers.push(poller);
+      return poller;
     });
 
     monitor = new PolarbearMonitor(
@@ -195,28 +186,21 @@ describe('PolarbearMonitor', () => {
     );
   });
 
-  it('should connect once and emit no event on first poll', async () => {
-    const { client, service } = queueConnection();
+  it('should create one poller and emit no event on first poll', async () => {
+    const poller = queuePoller();
 
     await monitor.pollRooms(singlePanelRoom);
 
-    expect(ModbusClient).toHaveBeenCalledWith(MODBUS_TIMEOUT_MS);
-    expect(PolarbearService).toHaveBeenCalledTimes(1);
+    expect(WallpanelPoller).toHaveBeenCalledWith({
+      host: '192.168.1.10',
+      port: 502,
+      unitIds: [UNIT_10],
+      minInterMessageGapMs: REQUEST_GAP_MS,
+      timeoutMs: MODBUS_TIMEOUT_MS,
+    });
 
-    expect(client.connect).toHaveBeenCalledWith('192.168.1.10', 502);
-    expect(service.getSetpoint).toHaveBeenNthCalledWith(1, UNIT_10, ZONE_1);
-    expect(service.getSetpoint).toHaveBeenNthCalledWith(2, UNIT_10, ZONE_2);
-    expect(service.getVirtualTemperature).toHaveBeenNthCalledWith(
-      1,
-      UNIT_10,
-      ZONE_1,
-    );
-    expect(service.getVirtualTemperature).toHaveBeenNthCalledWith(
-      2,
-      UNIT_10,
-      ZONE_2,
-    );
-    expect(service.getFlags).toHaveBeenCalledTimes(2);
+    expect(poller.getSnapshot).toHaveBeenCalledWith(UNIT_10);
+    expect(poller.getFlags).toHaveBeenCalledTimes(2);
     expect(onSnapshot).toHaveBeenNthCalledWith(
       1,
       {
@@ -225,6 +209,7 @@ describe('PolarbearMonitor', () => {
         panelId: 'panel-1',
         unitId: UNIT_10,
         zone: ZONE_1,
+        timestamp: SNAPSHOT_TIMESTAMP,
       },
       {
         setpoint: SETPOINT,
@@ -241,6 +226,7 @@ describe('PolarbearMonitor', () => {
         panelId: 'panel-1',
         unitId: UNIT_10,
         zone: ZONE_2,
+        timestamp: SNAPSHOT_TIMESTAMP,
       },
       {
         setpoint: SETPOINT,
@@ -252,24 +238,22 @@ describe('PolarbearMonitor', () => {
     expect(onPanelChange).not.toHaveBeenCalled();
   });
 
-  it('should reuse an existing connection on later polls', async () => {
-    const { client } = queueConnection();
+  it('should reuse an existing poller on later polls', async () => {
+    queuePoller();
 
     await monitor.pollRooms(singlePanelRoom);
     await monitor.pollRooms(singlePanelRoom);
 
-    expect(client.connect).toHaveBeenCalledTimes(1);
-    expect(PolarbearService).toHaveBeenCalledTimes(1);
+    expect(WallpanelPoller).toHaveBeenCalledTimes(1);
+    expect(createdPollers[0].getSnapshot).toHaveBeenCalledTimes(2);
   });
 
   it('should emit panel change when virtual temperature changes on second poll', async () => {
-    const { service } = queueConnection();
+    const poller = queuePoller();
 
-    service.getVirtualTemperature
-      .mockResolvedValueOnce(VIRTUAL_TEMP_1)
-      .mockResolvedValueOnce(VIRTUAL_TEMP_1)
-      .mockResolvedValueOnce(VIRTUAL_TEMP_2)
-      .mockResolvedValueOnce(VIRTUAL_TEMP_1);
+    poller.getSnapshot
+      .mockResolvedValueOnce(makeFullSnapshot(UNIT_10))
+      .mockResolvedValueOnce(makeFullSnapshot(UNIT_10, VIRTUAL_TEMP_2));
 
     await monitor.pollRooms(singlePanelRoom);
     await monitor.pollRooms(singlePanelRoom);
@@ -287,15 +271,13 @@ describe('PolarbearMonitor', () => {
   });
 
   it('should suppress virtual temperature change when echoGuard expects it', async () => {
-    const { service } = queueConnection();
+    const poller = queuePoller();
 
     echoGuard.consumeIfExpected.mockReturnValue(true);
 
-    service.getVirtualTemperature
-      .mockResolvedValueOnce(VIRTUAL_TEMP_1)
-      .mockResolvedValueOnce(VIRTUAL_TEMP_1)
-      .mockResolvedValueOnce(VIRTUAL_TEMP_2)
-      .mockResolvedValueOnce(VIRTUAL_TEMP_1);
+    poller.getSnapshot
+      .mockResolvedValueOnce(makeFullSnapshot(UNIT_10))
+      .mockResolvedValueOnce(makeFullSnapshot(UNIT_10, VIRTUAL_TEMP_2));
 
     await monitor.pollRooms(singlePanelRoom);
     await monitor.pollRooms(singlePanelRoom);
@@ -305,8 +287,8 @@ describe('PolarbearMonitor', () => {
   });
 
   it('should apply an airco fanMode change locally to all panel units in the room', async () => {
-    const { service: service1 } = queueConnection();
-    const { service: service2 } = queueConnection();
+    const poller1 = queuePoller();
+    const poller2 = queuePoller();
 
     const message = makeMessage({
       origin: 'airco',
@@ -317,9 +299,9 @@ describe('PolarbearMonitor', () => {
 
     await monitor.applyAircoChangeLocally(multiPanelRoom, message);
 
-    expect(service1.setFanMode).toHaveBeenCalledWith(UNIT_10, ZONE_2, 4);
-    expect(service1.setFanMode).toHaveBeenCalledWith(UNIT_11, ZONE_2, 4);
-    expect(service2.setFanMode).toHaveBeenCalledWith(UNIT_20, ZONE_2, 4);
+    expect(poller1.setFanMode).toHaveBeenCalledWith(UNIT_10, ZONE_2, 4);
+    expect(poller1.setFanMode).toHaveBeenCalledWith(UNIT_11, ZONE_2, 4);
+    expect(poller2.setFanMode).toHaveBeenCalledWith(UNIT_20, ZONE_2, 4);
 
     expect(echoGuard.remember).toHaveBeenCalledWith(
       'panel-1',
@@ -352,7 +334,7 @@ describe('PolarbearMonitor', () => {
 
     await monitor.applyAircoChangeLocally(multiPanelRoom, message);
 
-    expect(ModbusClient).not.toHaveBeenCalled();
+    expect(WallpanelPoller).not.toHaveBeenCalled();
     expect(onPanelChange).not.toHaveBeenCalled();
   });
 
@@ -365,14 +347,14 @@ describe('PolarbearMonitor', () => {
 
     await monitor.applyAircoChangeLocally(multiPanelRoom, message);
 
-    expect(ModbusClient).not.toHaveBeenCalled();
+    expect(WallpanelPoller).not.toHaveBeenCalled();
   });
 
   it('should detect panel setpoint flag, clear it, sync sibling panels and emit onPanelChange', async () => {
-    const { service: service1 } = queueConnection();
-    const { service: service2 } = queueConnection();
+    const poller1 = queuePoller();
+    const poller2 = queuePoller();
 
-    service1.getFlags
+    poller1.getFlags
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(0)
@@ -380,28 +362,24 @@ describe('PolarbearMonitor', () => {
       .mockResolvedValueOnce(PANEL_SETPOINT_FLAG_ZONE_1)
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(0);
 
-    service1.getPendingSetpoint.mockResolvedValue(23.5);
+    poller1.getPendingSetpoint.mockResolvedValue(23.5);
 
     await monitor.pollRooms(multiPanelRoom);
     await monitor.pollRooms(multiPanelRoom);
 
-    expect(service1.getPendingSetpoint).toHaveBeenCalledWith(UNIT_10, ZONE_1);
-    expect(service1.clearFlag).toHaveBeenCalledWith(
+    expect(poller1.getPendingSetpoint).toHaveBeenCalledWith(UNIT_10, ZONE_1);
+    expect(poller1.clearFlag).toHaveBeenCalledWith(
       UNIT_10,
       ZONE_1,
       'setpoint',
       PANEL_SETPOINT_FLAG_ZONE_1,
     );
 
-    expect(service1.setSetpoint).toHaveBeenCalledWith(UNIT_11, ZONE_1, 23.5);
-    expect(service2.setSetpoint).toHaveBeenCalledWith(UNIT_20, ZONE_1, 23.5);
-    expect(service1.setSetpoint).not.toHaveBeenCalledWith(
+    expect(poller1.setSetpoint).toHaveBeenCalledWith(UNIT_11, ZONE_1, 23.5);
+    expect(poller2.setSetpoint).toHaveBeenCalledWith(UNIT_20, ZONE_1, 23.5);
+    expect(poller1.setSetpoint).not.toHaveBeenCalledWith(
       UNIT_10,
       ZONE_1,
       23.5,
@@ -434,14 +412,14 @@ describe('PolarbearMonitor', () => {
     });
   });
 
-  it('should stop and disconnect all open connections', async () => {
-    const { client: client1 } = queueConnection();
-    const { client: client2 } = queueConnection();
+  it('should stop and disconnect all open pollers', async () => {
+    const poller1 = queuePoller();
+    const poller2 = queuePoller();
 
     await monitor.pollRooms(multiPanelRoom);
     await monitor.stop();
 
-    expect(client1.disconnect).toHaveBeenCalled();
-    expect(client2.disconnect).toHaveBeenCalled();
+    expect(poller1.stop).toHaveBeenCalled();
+    expect(poller2.stop).toHaveBeenCalled();
   });
 });

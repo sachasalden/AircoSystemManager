@@ -7,8 +7,13 @@ export default class ModbusClient {
   private reconnectDelay = 5000;
   private lastHost?: string;
   private lastPort?: number;
+  private lastRequestAt = 0;
+  private requestQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private timeout = 10000) {
+  constructor(
+    private timeout = 10000,
+    private requestGapMs = 0,
+  ) {
     this.client = new ModbusRTU();
     this.client.setTimeout(this.timeout);
   }
@@ -84,12 +89,43 @@ export default class ModbusClient {
   }
 
   async readHoldingRegisters(register: number, count = 1): Promise<number[]> {
-    const res = await this.client.readHoldingRegisters(register, count);
-    return res.data;
+    return this.enqueue(async () => {
+      await this.waitForRequestGap();
+      const res = await this.client.readHoldingRegisters(register, count);
+      this.lastRequestAt = Date.now();
+      return res.data;
+    });
   }
 
   async writeRegister(register: number, value: number): Promise<void> {
-    await this.client.writeRegister(register, value);
+    await this.enqueue(async () => {
+      await this.waitForRequestGap();
+      await this.client.writeRegister(register, value);
+      this.lastRequestAt = Date.now();
+    });
   }
 
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.requestQueue.then(task, task);
+
+    this.requestQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return run;
+  }
+
+  private async waitForRequestGap(): Promise<void> {
+    if (this.requestGapMs <= 0) {
+      return;
+    }
+
+    const elapsed = Date.now() - this.lastRequestAt;
+    const waitMs = this.requestGapMs - elapsed;
+
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
 }

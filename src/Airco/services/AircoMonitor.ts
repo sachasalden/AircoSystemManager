@@ -34,7 +34,7 @@ export default class AircoMonitor {
         const model = airco.deviceType;
         const unitId = Number(airco.data?.deviceTerminalId);
         const host = airco.environmentDevice?.ip;
-        const port = airco.environmentDevice?.port;
+        const port = Number(airco.environmentDevice?.port);
 
         if (!type || !Number.isFinite(unitId) || !host || !Number.isFinite(port)) {
           console.warn('[AircoMonitor] skipped poll due to missing environment device', {
@@ -100,7 +100,7 @@ export default class AircoMonitor {
       const model = airco.deviceType;
       const unitId = Number(airco.data?.deviceTerminalId);
       const host = airco.environmentDevice?.ip;
-      const port = airco.environmentDevice?.port;
+      const port = Number(airco.environmentDevice?.port);
 
       if (!type || !Number.isFinite(unitId) || !host || !Number.isFinite(port)) {
         console.warn(

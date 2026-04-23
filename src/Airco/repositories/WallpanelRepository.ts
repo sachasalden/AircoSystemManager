@@ -7,9 +7,13 @@ export type PanelDevice = {
   ip: string;
   type: string;
   model?: string;
+  version?: string;
   port: number;
   ids: number[];
+  terminalIds?: number[];
 };
+
+export type Device = PanelDevice;
 
 export type AirconditionerData = {
   deviceId: string;
