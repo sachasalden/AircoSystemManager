@@ -71,6 +71,9 @@ describe('SyncMainLoop', () => {
   let insightsStore: {
     applyPanelStateMessage: jest.Mock;
   };
+  let aircoInsightsStore: {
+    applySnapshot: jest.Mock;
+  };
 
   let topologyService: {
     getRooms: jest.Mock;
@@ -129,6 +132,9 @@ describe('SyncMainLoop', () => {
     insightsStore = {
       applyPanelStateMessage: jest.fn(),
     };
+    aircoInsightsStore = {
+      applySnapshot: jest.fn(),
+    };
 
     topologyService = {
       getRooms: jest.fn().mockResolvedValue(ROOMS),
@@ -179,6 +185,7 @@ describe('SyncMainLoop', () => {
       TOPIC_PREFIX,
       SOURCE_INSTANCE_ID,
       insightsStore as any,
+      aircoInsightsStore as any,
       PANEL_LOOP_MS,
       AIRCO_LOOP_MS,
       TOPOLOGY_REFRESH_MS,

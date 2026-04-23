@@ -378,6 +378,244 @@
   font-weight: 600;
 }
 
+.airco-console {
+  overflow: hidden;
+  background:
+          radial-gradient(circle at 24% 18%, rgba(72, 171, 255, 0.16), transparent 34%),
+          radial-gradient(circle at 78% 22%, rgba(255, 94, 77, 0.13), transparent 32%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+}
+
+.airco-console-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.airco-console-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.airco-console-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(300px, 1.1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.airco-thermostat-card,
+.airco-controls-card {
+  border-radius: 24px;
+  padding: 18px;
+  background: linear-gradient(
+          160deg,
+          rgba(15, 34, 48, 0.86),
+          rgba(15, 106, 112, 0.55)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
+  color: #eff8ff;
+}
+
+.airco-device-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.airco-device-title h4 {
+  margin: 3px 0 0 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.airco-device-title span {
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(239, 248, 255, 0.76);
+  font-size: 12px;
+}
+
+.temperature-arc {
+  --temp-fill: 50%;
+  width: min(320px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto 18px auto;
+  border-radius: 50%;
+  padding: 16px;
+  background:
+          conic-gradient(
+                  from 225deg,
+                  #3b82f6 0%,
+                  #33c7d7 calc(var(--temp-fill) * 0.45),
+                  #f6c445 calc(var(--temp-fill) * 0.72),
+                  #ff5c47 var(--temp-fill),
+                  rgba(255, 255, 255, 0.1) var(--temp-fill),
+                  rgba(255, 255, 255, 0.1) 75%,
+                  transparent 75%,
+                  transparent 100%
+          );
+  box-shadow:
+          inset 0 0 32px rgba(255, 255, 255, 0.06),
+          0 24px 46px rgba(0, 0, 0, 0.28);
+}
+
+.temperature-arc-inner {
+  height: 100%;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  background:
+          radial-gradient(circle at center, rgba(14, 28, 42, 0.96), rgba(12, 25, 36, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.temperature-arc-inner p,
+.temperature-arc-inner span {
+  margin: 0;
+  color: rgba(239, 248, 255, 0.72);
+  font-size: 13px;
+}
+
+.temperature-arc-inner strong {
+  display: block;
+  margin: 6px 0;
+  font-size: clamp(44px, 8vw, 72px);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.setpoint-slider-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  color: rgba(239, 248, 255, 0.78);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.temperature-slider {
+  width: 100%;
+  accent-color: #ff785e;
+  cursor: pointer;
+}
+
+.airco-apply-btn {
+  width: 100%;
+  margin-top: 16px;
+  font-weight: 800;
+}
+
+.airco-apply-btn:disabled,
+.fan-chip:disabled,
+.mode-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.airco-live-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.airco-live-strip > div,
+.airco-control-block {
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.airco-live-strip strong {
+  display: block;
+  margin-top: 4px;
+  color: #ffffff;
+  font-size: 17px;
+}
+
+.airco-control-block + .airco-control-block {
+  margin-top: 14px;
+}
+
+.airco-control-block h4 {
+  margin: 4px 0 12px 0;
+  font-size: 28px;
+}
+
+.fan-speed-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fan-chip {
+  min-width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef8ff;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.fan-chip.active {
+  background: linear-gradient(135deg, #4b9cff, #35b57f);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 12px 24px rgba(35, 150, 160, 0.28);
+}
+
+.fan-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mode-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #eef8ff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mode-card span,
+.mode-card strong {
+  display: block;
+}
+
+.mode-card span {
+  color: rgba(239, 248, 255, 0.74);
+  font-size: 12px;
+}
+
+.mode-card strong {
+  margin-top: 8px;
+  font-size: 22px;
+}
+
+.mode-card.active {
+  background: linear-gradient(145deg, rgba(255, 120, 94, 0.88), rgba(75, 156, 255, 0.72));
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 14px 26px rgba(255, 92, 71, 0.2);
+}
+
 /* Card buttons row + edit layout */
 .card-btn-row {
   display: flex;
@@ -439,6 +677,13 @@
   .cards-grid {
     grid-template-columns: 1fr;
   }
+  .airco-console-filters,
+  .airco-console-grid {
+    grid-template-columns: 1fr;
+  }
+  .fan-mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .edit-grid {
     grid-template-columns: 1fr;
   }
@@ -466,6 +711,13 @@
   }
   .form-actions {
     grid-column: auto;
+  }
+  .airco-console-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .airco-live-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

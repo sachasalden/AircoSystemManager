@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import AircoInsights from './AircoInsights';
 import WallpanelInsights from './WallpanelInsights';
 import './climate.css';
 import AirconditionerCard from './components/AirconditionerCard';
@@ -29,7 +30,7 @@ export default function Climate() {
     useState<string[]>([]);
 
   const [activeView, setActiveView] = useState<
-    'zones' | 'aircoSystemDevices' | 'wallpanelInsights'
+    'zones' | 'aircoSystemDevices' | 'wallpanelInsights' | 'aircoInsights'
   >('zones');
 
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
@@ -470,6 +471,16 @@ export default function Climate() {
           Wallpanel insights
         </button>
 
+        <button
+          className={`menu-item ${activeView === 'aircoInsights' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveView('aircoInsights');
+            setShowAircoForm(false);
+          }}
+        >
+          Airco insights
+        </button>
+
         <h4 style={{ marginTop: 24 }}>Zones</h4>
 
         {zones.map((zone) => (
@@ -516,6 +527,14 @@ export default function Climate() {
           </main>
         ) : activeView === 'wallpanelInsights' ? (
           <WallpanelInsights
+            zones={zones}
+            selectedZoneId={selectedZoneId}
+            selectedRoomId={selectedRoomId}
+            setSelectedZoneId={setSelectedZoneId}
+            setSelectedRoomId={setSelectedRoomId}
+          />
+        ) : activeView === 'aircoInsights' ? (
+          <AircoInsights
             zones={zones}
             selectedZoneId={selectedZoneId}
             selectedRoomId={selectedRoomId}

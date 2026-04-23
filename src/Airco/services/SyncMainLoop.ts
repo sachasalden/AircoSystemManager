@@ -7,11 +7,14 @@ import SyncEchoGuard from './SyncEchoGuard';
 import PolarbearMonitor from './PolarbearMonitor';
 import AircoMonitor from './AircoMonitor';
 import WallpanelInsightsStore from './WallpanelInsightsStore';
+import AircoInsightsStore from './AircoInsightsStore';
 import {
   createMessageId,
   type PanelStateMessage,
   type SyncMessage,
+  type SyncProperty,
   type TopologyRoom,
+  type Zone,
 } from './SyncTypes';
 
 export default class SyncMainLoop {
@@ -35,6 +38,7 @@ export default class SyncMainLoop {
     topicPrefix: string,
     private sourceInstanceId: string,
     private insightsStore: WallpanelInsightsStore,
+    private aircoInsightsStore: AircoInsightsStore,
     private panelLoopMs = Number(process.env.PANEL_POLL_INTERVAL_MS || 2000),
     private aircoLoopMs = Number(process.env.AIRCO_POLL_INTERVAL_MS || 2000),
     private topologyRefreshMs = Number(
@@ -64,6 +68,17 @@ export default class SyncMainLoop {
           fullMessage,
         );
         await this.mqtt.publish(fullMessage);
+      },
+      async (context, snapshot) => {
+        this.aircoInsightsStore.applySnapshot({
+          zoneId: context.zoneId,
+          roomId: context.roomId,
+          aircoId: context.aircoId,
+          unitId: context.unitId,
+          zone: context.zone,
+          snapshot,
+          timestamp: context.timestamp,
+        });
       },
     );
 
@@ -147,6 +162,47 @@ export default class SyncMainLoop {
     await this.mqtt.stop();
 
     console.log('[SyncMainLoop] stopped');
+  }
+
+  async applyAircoCommand(command: {
+    zoneId: string;
+    roomId: string;
+    aircoId: string;
+    zone: Zone;
+    property: Extract<SyncProperty, 'setpoint' | 'fanSpeed' | 'fanMode'>;
+    value: number;
+  }): Promise<{ unitId: number }> {
+    const result = await this.aircoMonitor.applyCommandLocally(
+      this.rooms,
+      command,
+    );
+
+    const fullMessage = this.buildMessage({
+      origin: 'panel',
+      zoneId: command.zoneId,
+      roomId: command.roomId,
+      deviceId: command.aircoId,
+      unitId: result.unitId,
+      zone: command.zone,
+      property: command.property,
+      value: command.value,
+    });
+
+    this.aircoInsightsStore.applySnapshot({
+      zoneId: command.zoneId,
+      roomId: command.roomId,
+      aircoId: command.aircoId,
+      unitId: result.unitId,
+      zone: command.zone,
+      snapshot: {
+        [command.property]: command.value,
+      },
+      timestamp: fullMessage.timestamp,
+    });
+
+    await this.mqtt.publish(fullMessage);
+
+    return result;
   }
 
   private buildMessage(

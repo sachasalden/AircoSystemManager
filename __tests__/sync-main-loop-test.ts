@@ -136,6 +136,9 @@ describe('SyncMainLoop', () => {
   let insightsStoreMock: {
     applyPanelStateMessage: jest.Mock;
   };
+  let aircoInsightsStoreMock: {
+    applySnapshot: jest.Mock;
+  };
 
   const flush = async () => {
     await Promise.resolve();
@@ -181,6 +184,9 @@ describe('SyncMainLoop', () => {
     insightsStoreMock = {
       applyPanelStateMessage: jest.fn(),
     };
+    aircoInsightsStoreMock = {
+      applySnapshot: jest.fn(),
+    };
 
     (TopologyService as unknown as jest.Mock).mockImplementation(
       () => topologyServiceMock,
@@ -214,6 +220,7 @@ describe('SyncMainLoop', () => {
       TOPIC_PREFIX,
       SOURCE_INSTANCE_ID,
       insightsStoreMock as any,
+      aircoInsightsStoreMock as any,
       PANEL_LOOP_MS,
       AIRCO_LOOP_MS,
       TOPOLOGY_REFRESH_MS,

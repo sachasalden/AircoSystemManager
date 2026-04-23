@@ -23,11 +23,13 @@ import DeviceService from './services/DeviceService';
 import SyncMainLoop from './services/SyncMainLoop';
 import { AircopanelRepository } from './repositories/WallpanelRepository';
 import createWallpanelInsightsRoute from './routes/WallpanelInsightsRoute';
+import createAircoInsightsRoute from './routes/AircoInsightsRoute';
 import createDevicesRoute from './routes/DevicesRoute';
 import createAircoDevicesRoute from './routes/AircoDevicesRoute';
 import createAircoAdapterTypesRoute from './routes/AircoAdapterTypesRoute';
 import createEnvironmentDevicesRoute from './routes/EnvironmentDevicesRoute';
 import WallpanelInsightsStore from './services/WallpanelInsightsStore';
+import AircoInsightsStore from './services/AircoInsightsStore';
 
 const app = express();
 
@@ -42,6 +44,7 @@ const sourceInstanceId =
   `${process.env.HOSTNAME || 'node'}-${process.pid}`;
 
 const wallpanelInsightsStore = new WallpanelInsightsStore();
+const aircoInsightsStore = new AircoInsightsStore();
 
 const repository = new AircopanelRepository(mongoUri);
 const controller = new PolarbearController(
@@ -71,11 +74,16 @@ const syncMainLoop = new SyncMainLoop(
   mqttTopicPrefix,
   sourceInstanceId,
   wallpanelInsightsStore,
+  aircoInsightsStore,
 );
 
 app.use(
   '/wallpanel-insights',
   createWallpanelInsightsRoute(controller, wallpanelInsightsStore),
+);
+app.use(
+  '/airco-insights',
+  createAircoInsightsRoute(repository, aircoInsightsStore, syncMainLoop),
 );
 app.use('/devices', createDevicesRoute(controller, deviceService));
 app.use('/airco-devices', createAircoDevicesRoute(aircoDeviceController));
