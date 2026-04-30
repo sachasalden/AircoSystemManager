@@ -22,6 +22,10 @@ export default class HopmannAdapter implements AircoAdapter {
     return String(this.connection.model ?? this.connection.type ?? '');
   }
 
+  private isBidirectional(): boolean {
+    return this.connection.bidirectional !== false;
+  }
+
   private isTypeA(type: string): boolean {
     return type === DEVICE_TYPE_A;
   }
@@ -115,10 +119,15 @@ export default class HopmannAdapter implements AircoAdapter {
   }
 
   async getSetpoint(unitId: number, zone: AircoZone): Promise<number> {
+    void unitId;
     void zone;
-    const type = this.getDeviceType();
-    const raw = await this.readOrWrite(unitId, this.tempRegister(type), 'readInput', 1);
-    return Number(raw) / 10;
+    const setpoint = Number(this.connection.setTemperature);
+
+    if (Number.isFinite(setpoint)) {
+      return setpoint;
+    }
+
+    return Number(this.connection.currentTemperature ?? 0);
   }
 
   async setSetpoint(
@@ -137,8 +146,14 @@ export default class HopmannAdapter implements AircoAdapter {
   }
 
   async getVirtualTemperature(unitId: number, zone: AircoZone): Promise<number> {
-    // hopmann legacy flow exposes one temperature datapath; mirror setpoint read.
-    return await this.getSetpoint(unitId, zone);
+    void zone;
+
+    if (!this.isBidirectional()) {
+      return await this.getSetpoint(unitId, zone);
+    }
+
+    const raw = await this.readOrWrite(unitId, 0, 'readInput', 1);
+    return Number(raw) / 10;
   }
 
   async setVirtualTemperature(

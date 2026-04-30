@@ -26,7 +26,8 @@
     "zen:test": "ts-node src/zen-th2-mb4-test-volgens-handleiding.ts",
     "debug:raw": "ts-node src/raw-debug-test.ts",
     "diagnose": "ts-node src/ultimate-diagnostic.ts",
-    "baud:fix": "ts-node src/baud-rate-fix-guide.ts"
+    "baud:fix": "ts-node src/baud-rate-fix-guide.ts",
+    "start:docker": "tsx src/Airco/main.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -37,6 +38,7 @@
     "prettier": "^3.3.1",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   },

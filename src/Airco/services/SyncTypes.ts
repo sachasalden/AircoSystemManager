@@ -52,6 +52,8 @@ export type TopologyRoom = {
   aircos: Array<{
     id: string;
     deviceType?: string;
+    setTemperature?: number;
+    currentTemperature?: number;
     data?: Record<string, any>;
     environmentDevice?: {
       id: string;
@@ -76,7 +78,7 @@ export const PANEL_TO_AIRCO_PROPERTIES: readonly SyncProperty[] = Object.freeze(
 );
 
 export const AIRCO_TO_PANEL_PROPERTIES: readonly SyncProperty[] = Object.freeze(
-  ['virtualTemperature', 'fanSpeed', 'fanMode'],
+  ['setpoint', 'virtualTemperature', 'fanSpeed', 'fanMode'],
 );
 
 export function createStateKey(

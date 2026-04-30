@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import axios from 'axios';
 import { SelectInput } from './components/ClimateFormControls';
+import SemiCircularTemperatureSlider from './components/SemiCircularTemperatureSlider';
 import type { AirconditionerDevice } from './model';
 import type {
   AircoInsight,
@@ -11,6 +11,7 @@ import type {
 } from './airco-insights/model';
 
 const API_BASE = 'http://localhost:3000';
+
 type CommandProperty = 'setpoint' | 'fanSpeed' | 'fanMode';
 type CommandOverrides = Record<string, number>;
 
@@ -20,18 +21,6 @@ function formatNumber(value: number | undefined, fallback = '-'): string {
   }
 
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function temperaturePercent(value: number, min: number, max: number): number {
-  if (max <= min) {
-    return 0;
-  }
-
-  return clamp(((value - min) / (max - min)) * 100, 0, 100);
 }
 
 function commandOverrideKey(
@@ -59,27 +48,27 @@ function applyCommandOverrides(
         setpoint:
           overrides[
             commandOverrideKey(airco.aircoId, zoneState.zone, 'setpoint')
-          ] ?? zoneState.setpoint,
+            ] ?? zoneState.setpoint,
         fanSpeed:
           overrides[
             commandOverrideKey(airco.aircoId, zoneState.zone, 'fanSpeed')
-          ] ?? zoneState.fanSpeed,
+            ] ?? zoneState.fanSpeed,
         fanMode:
           overrides[
             commandOverrideKey(airco.aircoId, zoneState.zone, 'fanMode')
-          ] ?? zoneState.fanMode,
+            ] ?? zoneState.fanMode,
       })),
     })),
   };
 }
 
 export default function AircoInsights({
-  zones,
-  selectedZoneId,
-  selectedRoomId,
-  setSelectedZoneId,
-  setSelectedRoomId,
-}: AircoInsightsProps) {
+                                        zones,
+                                        selectedZoneId,
+                                        selectedRoomId,
+                                        setSelectedZoneId,
+                                        setSelectedRoomId,
+                                      }: AircoInsightsProps) {
   const [data, setData] = useState<AircoInsightsResponse | null>(null);
   const [selectedAircoId, setSelectedAircoId] = useState('');
   const [selectedControlZone, setSelectedControlZone] = useState<1 | 2>(1);
@@ -87,18 +76,24 @@ export default function AircoInsights({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
   const commandOverridesRef = useRef<CommandOverrides>({});
 
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId);
+
   const selectedRoom = selectedZone?.rooms.find(
     (room) => room.id === selectedRoomId,
   );
+
   const roomAircos = selectedRoom?.airconditioners ?? [];
+
   const selectedAirco =
     roomAircos.find((airco) => airco.id === selectedAircoId) ?? roomAircos[0];
+
   const selectedInsight = data?.aircos.find(
     (airco) => airco.aircoId === selectedAirco?.id,
   );
+
   const selectedZoneInsight = selectedInsight?.zones.find(
     (zone) => zone.zone === selectedControlZone,
   );
@@ -107,16 +102,13 @@ export default function AircoInsights({
   const maxSetpoint = selectedAirco?.maxSetTemperature ?? 30;
   const minFanSpeed = selectedAirco?.minFanspeed ?? 1;
   const maxFanSpeed = selectedAirco?.maxFanspeed ?? 4;
+
   const activeSetpoint =
     draftSetpoint ??
     selectedZoneInsight?.setpoint ??
     selectedAirco?.setTemperature ??
     minSetpoint;
-  const setpointFill = temperaturePercent(
-    activeSetpoint,
-    minSetpoint,
-    maxSetpoint,
-  );
+
   const virtualTemperature = selectedZoneInsight?.virtualTemperature;
 
   async function fetchInsights() {
@@ -126,17 +118,47 @@ export default function AircoInsights({
       setLoading(true);
       setError('');
 
-      const res = await axios.get(
+      const res = await axios.get<AircoInsightsResponse>(
         `${API_BASE}/airco-insights/rooms/${selectedZoneId}/${selectedRoomId}`,
       );
 
-      setData(res.data);
+      setData(applyCommandOverrides(res.data, commandOverridesRef.current));
     } catch (err) {
       console.error('Failed to fetch airco insights', err);
       setError('Failed to fetch airco insights');
     } finally {
       setLoading(false);
     }
+  }
+
+  function updateLocalInsight(
+    current: AircoInsightsResponse | null,
+    aircoId: string,
+    zone: 1 | 2,
+    property: CommandProperty,
+    value: number,
+  ): AircoInsightsResponse | null {
+    if (!current) return current;
+
+    return {
+      ...current,
+      aircos: current.aircos.map((airco) =>
+        airco.aircoId !== aircoId
+          ? airco
+          : {
+            ...airco,
+            zones: airco.zones.map((zoneState) =>
+              zoneState.zone !== zone
+                ? zoneState
+                : {
+                  ...zoneState,
+                  status: 'ok',
+                  [property]: value,
+                },
+            ),
+          },
+      ),
+    };
   }
 
   async function sendCommand(
@@ -181,36 +203,6 @@ export default function AircoInsights({
     }
   }
 
-  function updateLocalInsight(
-    current: AircoInsightsResponse | null,
-    aircoId: string,
-    zone: 1 | 2,
-    property: CommandProperty,
-    value: number,
-  ): AircoInsightsResponse | null {
-    if (!current) return current;
-
-    return {
-      ...current,
-      aircos: current.aircos.map((airco) =>
-        airco.aircoId !== aircoId
-          ? airco
-          : {
-              ...airco,
-              zones: airco.zones.map((zoneState) =>
-                zoneState.zone !== zone
-                  ? zoneState
-                  : {
-                      ...zoneState,
-                      status: 'ok',
-                      [property]: value,
-                    },
-              ),
-            },
-      ),
-    };
-  }
-
   useEffect(() => {
     setData(null);
     setError('');
@@ -227,7 +219,10 @@ export default function AircoInsights({
       setSelectedAircoId(roomAircos[0].id);
     }
 
-    if (selectedAircoId && !roomAircos.some((airco) => airco.id === selectedAircoId)) {
+    if (
+      selectedAircoId &&
+      !roomAircos.some((airco) => airco.id === selectedAircoId)
+    ) {
       setSelectedAircoId(roomAircos[0]?.id ?? '');
     }
   }, [roomAircos, selectedAircoId]);
@@ -242,6 +237,7 @@ export default function AircoInsights({
     }
 
     setLoading(true);
+
     const streamUrl = `${API_BASE}/airco-insights/stream/rooms/${selectedZoneId}/${selectedRoomId}`;
     const eventSource = new EventSource(streamUrl);
 
@@ -250,11 +246,15 @@ export default function AircoInsights({
         const nextData = JSON.parse(
           (event as MessageEvent).data,
         ) as AircoInsightsResponse;
+
         setData(applyCommandOverrides(nextData, commandOverridesRef.current));
         setError('');
         setLoading(false);
       } catch (streamError) {
-        console.error('Failed to parse airco insights stream payload', streamError);
+        console.error(
+          'Failed to parse airco insights stream payload',
+          streamError,
+        );
       }
     });
 
@@ -263,10 +263,12 @@ export default function AircoInsights({
         const payload = JSON.parse((event as MessageEvent).data) as {
           message?: string;
         };
+
         setError(payload.message || 'Failed to stream airco insights');
       } catch {
         setError('Failed to stream airco insights');
       }
+
       setLoading(false);
     });
 
@@ -284,11 +286,17 @@ export default function AircoInsights({
       <div className="airco-console-header">
         <div>
           <h5 className="climate-title">Airco insights</h5>
-          <p className="notice">Live airco-data en bediening voor de gekozen room.</p>
+          <p className="notice">
+            Live airco-data en bediening voor de gekozen room.
+          </p>
         </div>
 
-        <p className="notice" style={{ margin: 0 }}>
-          {loading ? 'Connecting...' : saving ? 'Sending command...' : 'Live via server events'}
+        <p className="notice airco-live-status">
+          {loading
+            ? 'Connecting...'
+            : saving
+              ? 'Sending command...'
+              : 'Live via server events'}
         </p>
       </div>
 
@@ -377,39 +385,20 @@ export default function AircoInsights({
                 <p className="stat-label">Selected airco</p>
                 <h4>{selectedAirco.name || 'Airconditioning'}</h4>
               </div>
+
               <span>{selectedAirco.data.type}</span>
             </div>
 
-            <div
-              className="temperature-arc"
-              style={
-                {
-                  '--temp-fill': `${setpointFill}%`,
-                } as CSSProperties & Record<'--temp-fill', string>
-              }
-            >
-              <div className="temperature-arc-inner">
-                <p>Virtual temp</p>
-                <strong>{formatNumber(virtualTemperature)}°</strong>
-                <span>
-                  Target {formatNumber(activeSetpoint)}° · Zone {selectedControlZone}
-                </span>
-              </div>
-            </div>
-
-            <div className="setpoint-slider-row">
-              <span>{minSetpoint}°</span>
-              <input
-                className="temperature-slider"
-                type="range"
-                min={minSetpoint}
-                max={maxSetpoint}
-                step={0.5}
-                value={activeSetpoint}
-                onChange={(event) => setDraftSetpoint(Number(event.target.value))}
-              />
-              <span>{maxSetpoint}°</span>
-            </div>
+            <SemiCircularTemperatureSlider
+              value={activeSetpoint}
+              min={minSetpoint}
+              max={maxSetpoint}
+              step={0.5}
+              virtualTemperature={virtualTemperature}
+              zone={selectedControlZone}
+              disabled={saving}
+              onChange={(value) => setDraftSetpoint(value)}
+            />
 
             <button
               className="btn add-btn airco-apply-btn"
@@ -422,7 +411,7 @@ export default function AircoInsights({
                 }
               }}
             >
-              Apply setpoint
+              {saving ? 'Applying...' : 'Apply setpoint'}
             </button>
           </section>
 
@@ -450,7 +439,9 @@ export default function AircoInsights({
                     }`}
                     type="button"
                     disabled={saving}
-                    onClick={() => void sendCommand(selectedAirco, 'fanSpeed', speed)}
+                    onClick={() =>
+                      void sendCommand(selectedAirco, 'fanSpeed', speed)
+                    }
                   >
                     {speed}
                   </button>
@@ -472,7 +463,9 @@ export default function AircoInsights({
                   <button
                     key={mode.value}
                     className={`mode-card ${
-                      selectedZoneInsight?.fanMode === mode.value ? 'active' : ''
+                      selectedZoneInsight?.fanMode === mode.value
+                        ? 'active'
+                        : ''
                     }`}
                     type="button"
                     disabled={saving}
@@ -494,9 +487,9 @@ export default function AircoInsights({
 }
 
 function AircoStatusPanel({
-  insight,
-  zoneState,
-}: {
+                            insight,
+                            zoneState,
+                          }: {
   insight?: AircoInsight;
   zoneState?: AircoInsightZone;
 }) {
@@ -506,10 +499,12 @@ function AircoStatusPanel({
         <p className="stat-label">Unit</p>
         <strong>{insight?.unitId ?? '-'}</strong>
       </div>
+
       <div>
         <p className="stat-label">Setpoint</p>
         <strong>{formatNumber(zoneState?.setpoint)}°</strong>
       </div>
+
       <div>
         <p className="stat-label">Updated</p>
         <strong>
@@ -518,6 +513,7 @@ function AircoStatusPanel({
             : '-'}
         </strong>
       </div>
+
       <div>
         <p className="stat-label">Status</p>
         <strong>{zoneState?.status ?? 'waiting'}</strong>

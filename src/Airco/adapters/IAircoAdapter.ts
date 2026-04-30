@@ -7,6 +7,8 @@ export type AircoConnection = {
   type?: string;
   model?: string;
   bidirectional?: boolean;
+  setTemperature?: number;
+  currentTemperature?: number;
   roomTemparatureAddress?: string | number;
   roomTemparatureSetPointAddress?: string | number;
   fanspeedAddress?: string | number;

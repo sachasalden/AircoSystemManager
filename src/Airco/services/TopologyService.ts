@@ -96,6 +96,8 @@ export default class TopologyService {
             return {
               id: d.id,
               deviceType: d.deviceType,
+              setTemperature: d.setTemperature,
+              currentTemperature: d.currentTemperature,
               data: d.data,
               environmentDevice: linkedEnvironmentDevice
                 ? {

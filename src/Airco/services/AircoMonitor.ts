@@ -168,6 +168,10 @@ export default class AircoMonitor {
           message.value,
         );
 
+        if (message.property === 'setpoint') {
+          airco.setTemperature = message.value;
+        }
+
         this.lastState.set(
           createStateKey(airco.id, unitId, message.zone, message.property),
           message.value,
@@ -244,6 +248,10 @@ export default class AircoMonitor {
         command.value,
       );
 
+      if (command.property === 'setpoint') {
+        airco.setTemperature = command.value;
+      }
+
       this.lastState.set(
         createStateKey(airco.id, unitId, command.zone, command.property),
         command.value,
@@ -263,6 +271,10 @@ export default class AircoMonitor {
     snapshot: Snapshot,
   ): Promise<void> {
     for (const property of Object.keys(snapshot) as SyncProperty[]) {
+      if (property === 'setpoint') {
+        continue;
+      }
+
       if (!AIRCO_TO_PANEL_PROPERTIES.includes(property)) {
         continue;
       }
@@ -324,6 +336,8 @@ export default class AircoMonitor {
       type,
       model,
       bidirectional: airco.environmentDevice?.bidirectional,
+      setTemperature: airco.setTemperature,
+      currentTemperature: airco.currentTemperature,
     };
   }
 

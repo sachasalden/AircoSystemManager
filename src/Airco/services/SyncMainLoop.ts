@@ -178,7 +178,7 @@ export default class SyncMainLoop {
     );
 
     const fullMessage = this.buildMessage({
-      origin: 'panel',
+      origin: 'airco',
       zoneId: command.zoneId,
       roomId: command.roomId,
       deviceId: command.aircoId,
@@ -200,6 +200,7 @@ export default class SyncMainLoop {
       timestamp: fullMessage.timestamp,
     });
 
+    await this.panelMonitor.applyAircoChangeLocally(this.rooms, fullMessage);
     await this.mqtt.publish(fullMessage);
 
     return result;
