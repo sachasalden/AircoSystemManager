@@ -1,0 +1,113 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Backend Component Diagram - Airco Backend
+
+Container_Boundary(backend, "Airco Backend (Node.js / Express)") {
+
+    ' API / Routes
+    Component(devicesRoute, "DevicesRoute", "Express Route", "CRUD for wallpanel/room device tree")
+    Component(aircoDevicesRoute, "AircoDevicesRoute", "Express Route", "CRUD for airco devices")
+    Component(environmentDevicesRoute, "EnvironmentDevicesRoute", "Express Route", "CRUD for environment devices")
+    Component(wallpanelInsightsRoute, "WallpanelInsightsRoute", "Express Route (REST/SSE)", "Streams wallpanel insights")
+    Component(aircoInsightsRoute, "AircoInsightsRoute", "Express Route (REST/SSE)", "Streams airco insights and handles commands")
+    Component(adapterTypesRoute, "AircoAdapterTypesRoute", "Express Route", "Lists supported adapter types")
+
+    ' Controllers / Application services
+    Component(polarbearController, "PolarbearController", "Controller", "Wallpanel operations + room insights")
+    Component(aircoDeviceController, "AircoDeviceController", "Controller", "Airco device CRUD")
+    Component(environmentDeviceController, "EnvironmentDeviceController", "Controller", "Environment device CRUD")
+    Component(deviceService, "DeviceService", "Service", "Builds device tree for API")
+    Component(environmentDeviceService, "EnvironmentDeviceService", "Service", "Environment device business logic")
+
+    ' Sync core
+    Component(syncMainLoop, "SyncMainLoop", "Service", "Orchestrates panel/airco polling + MQTT sync")
+    Component(topologyService, "TopologyService", "Service", "Resolves room/panel/airco topology")
+    Component(polarbearMonitor, "PolarbearMonitor", "Service", "Polls & writes wallpanels")
+    Component(aircoMonitor, "AircoMonitor", "Service", "Polls & writes airco via adapters")
+    Component(syncEchoGuard, "SyncEchoGuard", "Service", "Prevents command echo loops")
+    Component(mqttSyncBus, "MqttSyncBus", "Service", "Publishes/subscribes sync and panel-state topics")
+
+    ' In-memory insight stores
+    Component(wallpanelInsightsStore, "WallpanelInsightsStore", "Store", "Latest wallpanel snapshots for API/SSE")
+    Component(aircoInsightsStore, "AircoInsightsStore", "Store", "Latest airco snapshots for API/SSE")
+
+    ' Persistence
+    Component(aircopanelRepository, "AircopanelRepository", "Repository", "Zones/rooms/panels/aircos in MongoDB")
+    Component(environmentDeviceRepository, "EnvironmentDeviceRepository", "Repository", "Environment devices in MongoDB")
+
+    ' Integration / Adapters
+    Component(adapterRegistry, "AdapterRegistry", "Registry", "Creates adapter by type")
+    Component(hopmannAdapter, "HopmannAdapter", "Adapter", "Airco protocol adapter")
+    Component(heinHopmannAdapter, "HeinEnHopmanGooilandAdapter", "Adapter", "Airco protocol adapter")
+    Component(polarbearService, "PolarbearService", "Service", "Polarbear register mapping and flag logic")
+    Component(wallpanelPoller, "WallpanelPoller", "Modbus Poller", "Connection + queue for sync polling/writes")
+}
+
+' External systems
+Container(webApp, "Frontend Web App", "React/Vite", "Operator UI")
+ComponentDb(mongoDb, "MongoDB", "Database", "Stores topology and device configuration")
+Component_Ext(mqttBroker, "MQTT Broker", "MQTT", "Sync bus between backend instances")
+Component_Ext(wallpanelUnits, "Polarbear Wallpanels", "Modbus TCP devices", "Physical wallpanel units")
+Component_Ext(aircoUnits, "Airco Units", "HVAC devices", "Physical airco endpoints via environment devices")
+Component_Ext(otherBackend, "Other Airco Backend Instance(s)", "Node.js", "Peer instances on same MQTT topics")
+
+' Frontend -> API
+Rel(webApp, devicesRoute, "GET/POST/PUT/DELETE /devices")
+Rel(webApp, aircoDevicesRoute, "GET/POST/PUT/DELETE /airco-devices")
+Rel(webApp, environmentDevicesRoute, "GET/POST/PUT/DELETE /environment-devices")
+Rel(webApp, wallpanelInsightsRoute, "GET + SSE /wallpanel-insights")
+Rel(webApp, aircoInsightsRoute, "GET + SSE + POST commands /airco-insights")
+Rel(webApp, adapterTypesRoute, "GET /airco-adapter-types")
+
+' Route -> controller/service
+Rel(devicesRoute, polarbearController, "Device CRUD calls")
+Rel(devicesRoute, deviceService, "Get device tree")
+Rel(aircoDevicesRoute, aircoDeviceController, "Airco device CRUD calls")
+Rel(environmentDevicesRoute, environmentDeviceController, "Environment device CRUD calls")
+Rel(wallpanelInsightsRoute, polarbearController, "Room wallpanel insights")
+Rel(wallpanelInsightsRoute, wallpanelInsightsStore, "Subscribe updates for SSE")
+Rel(aircoInsightsRoute, syncMainLoop, "Apply airco command")
+Rel(aircoInsightsRoute, aircoInsightsStore, "Subscribe updates for SSE")
+Rel(adapterTypesRoute, adapterRegistry, "List registered adapter types")
+
+' Controller/service -> repositories
+Rel(polarbearController, aircopanelRepository, "Read/write wallpanel + room data")
+Rel(polarbearController, wallpanelInsightsStore, "Read cached wallpanel state")
+Rel(deviceService, aircopanelRepository, "Read topology tree")
+Rel(aircoDeviceController, aircopanelRepository, "Read/write airco devices")
+Rel(environmentDeviceController, environmentDeviceService, "Calls service")
+Rel(environmentDeviceService, environmentDeviceRepository, "Read/write environment devices")
+
+' Sync orchestration
+Rel(syncMainLoop, topologyService, "Refresh rooms/topology")
+Rel(topologyService, aircopanelRepository, "Read zones/rooms/panels/aircos")
+Rel(topologyService, environmentDeviceRepository, "Resolve environment-device links")
+
+Rel(syncMainLoop, polarbearMonitor, "Poll + apply airco->panel changes")
+Rel(syncMainLoop, aircoMonitor, "Poll + apply panel->airco changes")
+Rel(syncMainLoop, mqttSyncBus, "Publish/subscribe sync messages")
+Rel(syncMainLoop, syncEchoGuard, "Create/cleanup anti-echo state")
+Rel(syncMainLoop, wallpanelInsightsStore, "Store panel state updates")
+Rel(syncMainLoop, aircoInsightsStore, "Store airco snapshots")
+
+' Monitor internals
+Rel(polarbearMonitor, wallpanelPoller, "Modbus read/write per panel/unit")
+Rel(wallpanelPoller, polarbearService, "Uses register-level operations")
+Rel(polarbearMonitor, syncEchoGuard, "Remember/consume expected echoes")
+Rel(aircoMonitor, adapterRegistry, "Resolve adapter by type")
+Rel(aircoMonitor, syncEchoGuard, "Remember/consume expected echoes")
+Rel(adapterRegistry, hopmannAdapter, "Creates")
+Rel(adapterRegistry, heinHopmannAdapter, "Creates")
+Rel(polarbearController, polarbearService, "Direct wallpanel operations")
+
+' External integrations
+Rel(aircopanelRepository, mongoDb, "Read/Writes")
+Rel(environmentDeviceRepository, mongoDb, "Read/Writes")
+Rel(mqttSyncBus, mqttBroker, "Pub/Sub qos=1")
+Rel(otherBackend, mqttBroker, "Pub/Sub same topics")
+Rel(polarbearService, wallpanelUnits, "Modbus register reads/writes")
+Rel(hopmannAdapter, aircoUnits, "Protocol I/O")
+Rel(heinHopmannAdapter, aircoUnits, "Protocol I/O")
+
+@enduml

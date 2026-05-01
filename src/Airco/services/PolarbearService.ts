@@ -1,7 +1,14 @@
 import ModbusClient from '../clients/ModbusClient';
 
-type Zone = 1 | 2;
-type FlagType = 'setpoint' | 'fanMode';
+export type Zone = 1 | 2;
+export type FlagType = 'setpoint' | 'fanMode';
+
+export type PolarbearZoneSnapshot = {
+  setpoint: number;
+  virtualTemp: number;
+  fanSpeed: number;
+  fanMode: number;
+};
 
 const registersV1 = Object.freeze({
   Zone1Setpoint: 601,
@@ -50,6 +57,10 @@ export default class PolarbearService {
     return flagBits[type][zone];
   }
 
+  private getZoneRegister(zone: Zone, zone1: number, zone2: number): number {
+    return zone === 1 ? zone1 : zone2;
+  }
+
   private async detectVersion(unitId: number): Promise<'v1' | 'v2'> {
     const cached = this.detectedVersions.get(unitId);
 
@@ -71,8 +82,11 @@ export default class PolarbearService {
   async getSetpoint(unitId: number, zone: Zone): Promise<number> {
     this.client.setID(unitId);
 
-    const register =
-      zone === 1 ? registersV1.Zone1Setpoint : registersV1.Zone2Setpoint;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1Setpoint,
+      registersV1.Zone2Setpoint,
+    );
 
     const data = await this.client.readHoldingRegisters(register, 1);
     const arr = Array.isArray(data) ? data : (data as any).data;
@@ -86,8 +100,11 @@ export default class PolarbearService {
   ): Promise<void> {
     this.client.setID(unitId);
 
-    const register =
-      zone === 1 ? registersV1.Zone1Setpoint : registersV1.Zone2Setpoint;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1Setpoint,
+      registersV1.Zone2Setpoint,
+    );
 
     await this.client.writeRegister(register, Math.round(temperature * 10));
   }
@@ -97,10 +114,11 @@ export default class PolarbearService {
     this.client.setID(unitId);
 
     if (version === 'v2') {
-      const register =
-        zone === 1
-          ? registersV2.Zone1DisplayTemp
-          : registersV2.Zone2DisplayTemp;
+      const register = this.getZoneRegister(
+        zone,
+        registersV2.Zone1DisplayTemp,
+        registersV2.Zone2DisplayTemp,
+      );
 
       const result = await this.client.readHoldingRegisters(register, 1);
       const arr = Array.isArray(result) ? result : (result as any).data;
@@ -108,8 +126,11 @@ export default class PolarbearService {
       return (arr[0] & 0x03ff) / 10;
     }
 
-    const register =
-      zone === 1 ? registersV1.Zone1VirtualTemp : registersV1.Zone2VirtualTemp;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1VirtualTemp,
+      registersV1.Zone2VirtualTemp,
+    );
 
     const result = await this.client.readHoldingRegisters(register, 1);
     const arr = Array.isArray(result) ? result : (result as any).data;
@@ -127,10 +148,11 @@ export default class PolarbearService {
     const rawTemp = Math.round(temperature * 10);
 
     if (version === 'v2') {
-      const register =
-        zone === 1
-          ? registersV2.Zone1DisplayTemp
-          : registersV2.Zone2DisplayTemp;
+      const register = this.getZoneRegister(
+        zone,
+        registersV2.Zone1DisplayTemp,
+        registersV2.Zone2DisplayTemp,
+      );
 
       const currentData = await this.client.readHoldingRegisters(register, 1);
       const arr = Array.isArray(currentData)
@@ -144,8 +166,11 @@ export default class PolarbearService {
       return;
     }
 
-    const register =
-      zone === 1 ? registersV1.Zone1VirtualTemp : registersV1.Zone2VirtualTemp;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1VirtualTemp,
+      registersV1.Zone2VirtualTemp,
+    );
 
     await this.client.writeRegister(register, rawTemp);
   }
@@ -153,8 +178,11 @@ export default class PolarbearService {
   async getFanSpeed(unitId: number, zone: Zone): Promise<number> {
     this.client.setID(unitId);
 
-    const register =
-      zone === 1 ? registersV1.Zone1FanSpeed : registersV1.Zone2FanSpeed;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1FanSpeed,
+      registersV1.Zone2FanSpeed,
+    );
 
     const result = await this.client.readHoldingRegisters(register, 1);
     const arr = Array.isArray(result) ? result : (result as any).data;
@@ -165,8 +193,11 @@ export default class PolarbearService {
   async setFanSpeed(unitId: number, zone: Zone, speed: number): Promise<void> {
     this.client.setID(unitId);
 
-    const register =
-      zone === 1 ? registersV1.Zone1FanSpeed : registersV1.Zone2FanSpeed;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1FanSpeed,
+      registersV1.Zone2FanSpeed,
+    );
 
     await this.client.writeRegister(register, speed);
   }
@@ -174,8 +205,11 @@ export default class PolarbearService {
   async getFanMode(unitId: number, zone: Zone): Promise<number> {
     this.client.setID(unitId);
 
-    const register =
-      zone === 1 ? registersV1.Zone1FanMode : registersV1.Zone2FanMode;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1FanMode,
+      registersV1.Zone2FanMode,
+    );
 
     const result = await this.client.readHoldingRegisters(register, 1);
     const arr = Array.isArray(result) ? result : (result as any).data;
@@ -186,8 +220,11 @@ export default class PolarbearService {
   async setFanMode(unitId: number, zone: Zone, mode: number): Promise<void> {
     this.client.setID(unitId);
 
-    const register =
-      zone === 1 ? registersV1.Zone1FanMode : registersV1.Zone2FanMode;
+    const register = this.getZoneRegister(
+      zone,
+      registersV1.Zone1FanMode,
+      registersV1.Zone2FanMode,
+    );
 
     await this.client.writeRegister(register, mode);
   }
@@ -260,12 +297,26 @@ export default class PolarbearService {
     return (arr[0] ?? 0) & 0x0007;
   }
 
-  async getSnapshot(unitId: number, zone: Zone) {
+  async getZoneSnapshot(
+    unitId: number,
+    zone: Zone,
+  ): Promise<PolarbearZoneSnapshot> {
     return {
       setpoint: await this.getSetpoint(unitId, zone),
-      virtualTemperature: await this.getVirtualTemperature(unitId, zone),
+      virtualTemp: await this.getVirtualTemperature(unitId, zone),
       fanSpeed: await this.getFanSpeed(unitId, zone),
       fanMode: await this.getFanMode(unitId, zone),
+    };
+  }
+
+  async getSnapshot(unitId: number, zone: Zone) {
+    const zoneSnapshot = await this.getZoneSnapshot(unitId, zone);
+
+    return {
+      setpoint: zoneSnapshot.setpoint,
+      virtualTemperature: zoneSnapshot.virtualTemp,
+      fanSpeed: zoneSnapshot.fanSpeed,
+      fanMode: zoneSnapshot.fanMode,
       flags: await this.getFlags(unitId),
       pendingSetpoint: await this.getPendingSetpoint(unitId, zone),
       pendingFanMode: await this.getPendingFanMode(unitId, zone),

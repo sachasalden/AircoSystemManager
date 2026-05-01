@@ -1,8 +1,6 @@
 import ModbusClient from '../clients/ModbusClient';
 import PolarbearService from './PolarbearService';
-
-export type Zone = 1 | 2;
-export type FlagType = 'setpoint' | 'fanMode';
+import type { FlagType, Zone } from './PolarbearService';
 
 export interface ZoneSnapshot {
   setpoint: number;
@@ -101,7 +99,9 @@ export default class WallpanelPoller {
   }
 
   async getSetpoint(unitId: number, zone: Zone): Promise<number> {
-    return this.runForUnit(unitId, () => this.service.getSetpoint(unitId, zone));
+    return this.runZoneRead(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.getSetpoint(targetUnitId, targetZone),
+    );
   }
 
   async setSetpoint(
@@ -109,34 +109,38 @@ export default class WallpanelPoller {
     zone: Zone,
     temperature: number,
   ): Promise<void> {
-    await this.runForUnit(unitId, () =>
-      this.service.setSetpoint(unitId, zone, temperature),
+    await this.runZoneWrite(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.setSetpoint(targetUnitId, targetZone, temperature),
     );
   }
 
   async getFanSpeed(unitId: number, zone: Zone): Promise<number> {
-    return this.runForUnit(unitId, () => this.service.getFanSpeed(unitId, zone));
+    return this.runZoneRead(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.getFanSpeed(targetUnitId, targetZone),
+    );
   }
 
   async setFanSpeed(unitId: number, zone: Zone, speed: number): Promise<void> {
-    await this.runForUnit(unitId, () =>
-      this.service.setFanSpeed(unitId, zone, speed),
+    await this.runZoneWrite(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.setFanSpeed(targetUnitId, targetZone, speed),
     );
   }
 
   async getFanMode(unitId: number, zone: Zone): Promise<number> {
-    return this.runForUnit(unitId, () => this.service.getFanMode(unitId, zone));
+    return this.runZoneRead(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.getFanMode(targetUnitId, targetZone),
+    );
   }
 
   async setFanMode(unitId: number, zone: Zone, mode: number): Promise<void> {
-    await this.runForUnit(unitId, () =>
-      this.service.setFanMode(unitId, zone, mode),
+    await this.runZoneWrite(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.setFanMode(targetUnitId, targetZone, mode),
     );
   }
 
   async getVirtualTemp(unitId: number, zone: Zone): Promise<number> {
-    return this.runForUnit(unitId, () =>
-      this.service.getVirtualTemperature(unitId, zone),
+    return this.runZoneRead(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.getVirtualTemperature(targetUnitId, targetZone),
     );
   }
 
@@ -145,8 +149,8 @@ export default class WallpanelPoller {
     zone: Zone,
     temperature: number,
   ): Promise<void> {
-    await this.runForUnit(unitId, () =>
-      this.service.setVirtualTemperature(unitId, zone, temperature),
+    await this.runZoneWrite(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.setVirtualTemperature(targetUnitId, targetZone, temperature),
     );
   }
 
@@ -160,8 +164,8 @@ export default class WallpanelPoller {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    await this.runForUnit(unitId, () =>
-      this.service.setFlag(unitId, zone, type, currentFlags),
+    await this.runZoneWrite(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.setFlag(targetUnitId, targetZone, type, currentFlags),
     );
   }
 
@@ -171,20 +175,20 @@ export default class WallpanelPoller {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    await this.runForUnit(unitId, () =>
-      this.service.clearFlag(unitId, zone, type, currentFlags),
+    await this.runZoneWrite(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.clearFlag(targetUnitId, targetZone, type, currentFlags),
     );
   }
 
   async getPendingSetpoint(unitId: number, zone: Zone): Promise<number> {
-    return this.runForUnit(unitId, () =>
-      this.service.getPendingSetpoint(unitId, zone),
+    return this.runZoneRead(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.getPendingSetpoint(targetUnitId, targetZone),
     );
   }
 
   async getPendingFanMode(unitId: number, zone: Zone): Promise<number> {
-    return this.runForUnit(unitId, () =>
-      this.service.getPendingFanMode(unitId, zone),
+    return this.runZoneRead(unitId, zone, (targetUnitId, targetZone) =>
+      this.service.getPendingFanMode(targetUnitId, targetZone),
     );
   }
 
@@ -192,12 +196,23 @@ export default class WallpanelPoller {
     unitId: number,
     zone: Zone,
   ): Promise<ZoneSnapshot> {
-    return {
-      setpoint: await this.service.getSetpoint(unitId, zone),
-      fanSpeed: await this.service.getFanSpeed(unitId, zone),
-      fanMode: await this.service.getFanMode(unitId, zone),
-      virtualTemp: await this.service.getVirtualTemperature(unitId, zone),
-    };
+    return this.service.getZoneSnapshot(unitId, zone);
+  }
+
+  private runZoneRead<T>(
+    unitId: number,
+    zone: Zone,
+    task: (unitId: number, zone: Zone) => Promise<T>,
+  ): Promise<T> {
+    return this.runForUnit(unitId, () => task(unitId, zone));
+  }
+
+  private runZoneWrite(
+    unitId: number,
+    zone: Zone,
+    task: (unitId: number, zone: Zone) => Promise<void>,
+  ): Promise<void> {
+    return this.runForUnit(unitId, () => task(unitId, zone));
   }
 
   private async runForUnit<T>(
