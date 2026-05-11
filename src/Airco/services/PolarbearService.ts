@@ -61,6 +61,10 @@ export default class PolarbearService {
     return zone === 1 ? zone1 : zone2;
   }
 
+  private normalizeFanMode(mode: number): number {
+    return Number(mode) === 0 ? 0 : 1;
+  }
+
   private async detectVersion(unitId: number): Promise<'v1' | 'v2'> {
     const cached = this.detectedVersions.get(unitId);
 
@@ -214,7 +218,7 @@ export default class PolarbearService {
     const result = await this.client.readHoldingRegisters(register, 1);
     const arr = Array.isArray(result) ? result : (result as any).data;
 
-    return arr[0];
+    return this.normalizeFanMode(arr[0]);
   }
 
   async setFanMode(unitId: number, zone: Zone, mode: number): Promise<void> {
@@ -226,7 +230,7 @@ export default class PolarbearService {
       registersV1.Zone2FanMode,
     );
 
-    await this.client.writeRegister(register, mode);
+    await this.client.writeRegister(register, this.normalizeFanMode(mode));
   }
 
   async getFlags(unitId: number): Promise<number> {
@@ -294,7 +298,7 @@ export default class PolarbearService {
     );
     const arr = Array.isArray(result) ? result : (result as any).data;
 
-    return (arr[0] ?? 0) & 0x0007;
+    return this.normalizeFanMode((arr[0] ?? 0) & 0x0007);
   }
 
   async getZoneSnapshot(

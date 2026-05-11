@@ -50,6 +50,10 @@ export default class HopmannAdapter implements AircoAdapter {
     return 102;
   }
 
+  private hasSeparatePowerRegister(type: string): boolean {
+    return this.isTypeA(type) || this.isTypeB(type);
+  }
+
   private encodeFanSpeed(type: string, speed: number): number {
     if (this.isTypeA(type) || this.isTypeB(type)) return speed;
     return speed * 10;
@@ -180,32 +184,41 @@ export default class HopmannAdapter implements AircoAdapter {
     void zone;
     const type = this.getDeviceType();
 
-    if (speed !== 0) {
-      await this.readOrWrite(unitId, this.powerRegister(type), 'writeHold', 1);
-    } else {
-      await this.readOrWrite(unitId, this.powerRegister(type), 'writeHold', 0);
-    }
-
     const encoded = this.encodeFanSpeed(type, speed === -1 ? 2 : speed);
     await this.readOrWrite(unitId, this.fanRegister(type), 'writeHold', encoded);
   }
 
   async getFanMode(unitId: number, zone: AircoZone): Promise<number> {
-    const speed = await this.getFanSpeed(unitId, zone);
-    if (speed === 0) return 0;
-    if (speed === -1) return 1;
-    return speed + 1;
+    void zone;
+    const type = this.getDeviceType();
+
+    if (!this.hasSeparatePowerRegister(type)) {
+      return 1;
+    }
+
+    const raw = await this.readOrWrite(
+      unitId,
+      this.powerRegister(type),
+      'readHold',
+      1,
+    );
+
+    return Number(raw) === 0 ? 0 : 1;
   }
 
   async setFanMode(unitId: number, zone: AircoZone, mode: number): Promise<void> {
-    if (mode === 0) {
-      await this.setFanSpeed(unitId, zone, 0);
+    void zone;
+    const type = this.getDeviceType();
+
+    if (!this.hasSeparatePowerRegister(type)) {
       return;
     }
-    if (mode === 1) {
-      await this.setFanSpeed(unitId, zone, -1);
-      return;
-    }
-    await this.setFanSpeed(unitId, zone, mode - 1);
+
+    await this.readOrWrite(
+      unitId,
+      this.powerRegister(type),
+      'writeHold',
+      mode === 0 ? 0 : 1,
+    );
   }
 }

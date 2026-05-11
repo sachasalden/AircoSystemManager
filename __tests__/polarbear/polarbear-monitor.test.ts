@@ -23,7 +23,7 @@ describe('PolarbearMonitor', () => {
   const VIRTUAL_TEMP_1 = 22.0;
   const VIRTUAL_TEMP_2 = 23.0;
   const FAN_SPEED = 3;
-  const FAN_MODE = 2;
+  const FAN_MODE = 1;
   const SNAPSHOT_TIMESTAMP = '2026-03-25T10:00:00.000Z';
 
   const PANEL_SETPOINT_FLAG_ZONE_1 = 0x0001;
@@ -299,30 +299,30 @@ describe('PolarbearMonitor', () => {
 
     await monitor.applyAircoChangeLocally(multiPanelRoom, message);
 
-    expect(poller1.setFanMode).toHaveBeenCalledWith(UNIT_10, ZONE_2, 4);
-    expect(poller1.setFanMode).toHaveBeenCalledWith(UNIT_11, ZONE_2, 4);
-    expect(poller2.setFanMode).toHaveBeenCalledWith(UNIT_20, ZONE_2, 4);
+    expect(poller1.setFanMode).toHaveBeenCalledWith(UNIT_10, ZONE_2, 1);
+    expect(poller1.setFanMode).toHaveBeenCalledWith(UNIT_11, ZONE_2, 1);
+    expect(poller2.setFanMode).toHaveBeenCalledWith(UNIT_20, ZONE_2, 1);
 
     expect(echoGuard.remember).toHaveBeenCalledWith(
       'panel-1',
       UNIT_10,
       ZONE_2,
       'fanMode',
-      4,
+      1,
     );
     expect(echoGuard.remember).toHaveBeenCalledWith(
       'panel-1',
       UNIT_11,
       ZONE_2,
       'fanMode',
-      4,
+      1,
     );
     expect(echoGuard.remember).toHaveBeenCalledWith(
       'panel-2',
       UNIT_20,
       ZONE_2,
       'fanMode',
-      4,
+      1,
     );
   });
 
@@ -338,16 +338,32 @@ describe('PolarbearMonitor', () => {
     expect(onPanelChange).not.toHaveBeenCalled();
   });
 
-  it('should ignore unsupported properties in applyAircoChangeLocally', async () => {
+  it('should apply an airco fanSpeed change without writing fanMode to panels', async () => {
+    const poller1 = queuePoller();
+    const poller2 = queuePoller();
+
     const message = makeMessage({
-      origin: 'airco',
-      property: 'setpoint',
-      value: 23.5,
+      property: 'fanSpeed',
+      value: 3,
+      zone: ZONE_1,
     });
 
     await monitor.applyAircoChangeLocally(multiPanelRoom, message);
 
-    expect(WallpanelPoller).not.toHaveBeenCalled();
+    expect(poller1.setFanSpeed).toHaveBeenCalledWith(UNIT_10, ZONE_1, 3);
+    expect(poller1.setFanSpeed).toHaveBeenCalledWith(UNIT_11, ZONE_1, 3);
+    expect(poller2.setFanSpeed).toHaveBeenCalledWith(UNIT_20, ZONE_1, 3);
+
+    expect(poller1.setFanMode).not.toHaveBeenCalled();
+    expect(poller2.setFanMode).not.toHaveBeenCalled();
+
+    expect(echoGuard.remember).toHaveBeenCalledWith(
+      'panel-1',
+      UNIT_10,
+      ZONE_1,
+      'fanSpeed',
+      3,
+    );
   });
 
   it('should detect panel setpoint flag, clear it, sync sibling panels and emit onPanelChange', async () => {

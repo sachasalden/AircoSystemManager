@@ -172,10 +172,14 @@ export default class HeinEnHopmanGooilandAdapter implements AircoAdapter {
   }
 
   async getFanMode(unitId: number, zone: AircoZone): Promise<number> {
-    return await this.getFanSpeed(unitId, zone);
+    void unitId;
+    void zone;
+    return 1;
   }
 
   async setFanMode(unitId: number, zone: AircoZone, mode: number): Promise<void> {
-    await this.setFanSpeed(unitId, zone, mode);
+    void unitId;
+    void zone;
+    void mode;
   }
 }

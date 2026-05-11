@@ -14,18 +14,21 @@ describe('HopmannAdapter', () => {
     host: '192.168.33.5',
     port: 300,
     type: 'FC-500PC/FC-1100PC',
+    setTemperature: 20.5,
   };
 
   const connectionTypeB: AircoConnection = {
     host: '192.168.33.6',
     port: 300,
     type: 'FC-3000DC/FC-3500DC',
+    setTemperature: 21.5,
   };
 
   const connectionUnknown: AircoConnection = {
     host: '192.168.33.7',
     port: 300,
     type: 'UNKNOWN',
+    setTemperature: 20.5,
   };
 
   let adapter: HopmannAdapter;
@@ -50,12 +53,10 @@ describe('HopmannAdapter', () => {
     });
 
     it('should read temperature setpoint', async () => {
-      readOrWriteSpy.mockResolvedValue(205);
-
       const result = await adapter.getSetpoint(unitId, zone);
 
       expect(result).toBe(20.5);
-      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 0, 'readInput', 1);
+      expect(readOrWriteSpy).not.toHaveBeenCalled();
     });
 
     it('should write temperature setpoint', async () => {
@@ -96,96 +97,89 @@ describe('HopmannAdapter', () => {
       expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 2, 'readHold', 1);
     });
 
-    it('should write fan speed 3 and power on first', async () => {
+    it('should write fan speed 3 without changing power', async () => {
       const setFanSpeed = 3;
       readOrWriteSpy.mockResolvedValue(undefined);
 
       await adapter.setFanSpeed(unitId, zone, setFanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 1, 'writeHold', 1,);
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 2, 'writeHold', 3,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 2, 'writeHold', 3);
     });
 
-    it('should write fan speed 0 and power off first', async () => {
+    it('should write fan speed 0 without changing power', async () => {
       const setFanSpeed = 0;
 
       readOrWriteSpy.mockResolvedValue(undefined);
 
       await adapter.setFanSpeed(unitId, zone, setFanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 1, 'writeHold', 0,
-      );
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 2, 'writeHold', 0,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 2, 'writeHold', 0);
     });
 
-    it('should write auto fan speed when speed is -1', async () => {
+    it('should write auto fan speed without changing power', async () => {
       const setFanSpeed = -1;
       readOrWriteSpy.mockResolvedValue(undefined);
 
       await adapter.setFanSpeed(unitId, zone, setFanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 1, 'writeHold', 1,);
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 2, 'writeHold', 2,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 2, 'writeHold', 2);
     });
 
-    it('should return fan mode 0 when fan speed is 0', async () => {
+    it('should return fan mode 0 when power register is 0', async () => {
+      readOrWriteSpy.mockResolvedValue(0);
+
+      const result = await adapter.getFanMode(unitId, zone);
+
+      expect(result).toBe(0);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'readHold', 1);
+    });
+
+    it('should return fan mode 1 when power register is on', async () => {
+      readOrWriteSpy.mockResolvedValue(1);
+
+      const result = await adapter.getFanMode(unitId, zone);
+
+      expect(result).toBe(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'readHold', 1);
+    });
+
+    it('should not derive fan mode from fan speed', async () => {
+      readOrWriteSpy.mockResolvedValue(1);
+
+      const result = await adapter.getFanMode(unitId, zone);
+
+      expect(result).toBe(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'readHold', 1);
+    });
+
+    it('should set fan mode 0 by writing power off', async () => {
       const fanMode = 0;
-      jest.spyOn(adapter, 'getFanSpeed').mockResolvedValue(fanMode);
+      readOrWriteSpy.mockResolvedValue(undefined);
 
-      const result = await adapter.getFanMode(unitId, zone);
+      await adapter.setFanMode(unitId, zone, fanMode);
 
-      expect(result).toBe(fanMode);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'writeHold', 0);
     });
 
-    it('should return fan mode 1 when fan speed is -1', async () => {
+    it('should set fan mode 1 by writing power on', async () => {
       const fanMode = 1;
-      const fanSpeed = -1;
-      jest.spyOn(adapter, 'getFanSpeed').mockResolvedValue(fanSpeed);
+      readOrWriteSpy.mockResolvedValue(undefined);
 
-      const result = await adapter.getFanMode(unitId, zone);
+      await adapter.setFanMode(unitId, zone, fanMode);
 
-      expect(result).toBe(fanMode);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'writeHold', 1);
     });
 
-    it('should return fan mode speed + 1 for normal speeds', async () => {
-      const fanSpeed = 3;
+    it('should set any non-zero fan mode by writing power on', async () => {
       const fanMode = 4;
-      jest.spyOn(adapter, 'getFanSpeed').mockResolvedValue(fanSpeed);
-
-      const result = await adapter.getFanMode(unitId, zone);
-
-      expect(result).toBe(fanMode);
-    });
-
-    it('should set fan mode 0 by calling setFanSpeed with 0', async () => {
-      const fanMode = 0;
-      const fanSpeed = 0;
-
-      const setFanSpeedSpy = jest.spyOn(adapter, 'setFanSpeed').mockResolvedValue(undefined);
+      readOrWriteSpy.mockResolvedValue(undefined);
 
       await adapter.setFanMode(unitId, zone, fanMode);
 
-      expect(setFanSpeedSpy).toHaveBeenCalledWith(unitId, zone, fanSpeed);
-    });
-
-    it('should set fan mode 1 by calling setFanSpeed with -1', async () => {
-      const fanMode = 1;
-      const fanSpeed = -1;
-      const setFanSpeedSpy = jest.spyOn(adapter, 'setFanSpeed').mockResolvedValue(undefined);
-
-      await adapter.setFanMode(unitId, zone, fanMode);
-
-      expect(setFanSpeedSpy).toHaveBeenCalledWith(unitId, zone, fanSpeed);
-    });
-
-    it('should set fan mode 4 by calling setFanSpeed with 3', async () => {
-      const fanMode = 4;
-      const fanSpeed = 3;
-      const setFanSpeedSpy = jest.spyOn(adapter, 'setFanSpeed').mockResolvedValue(undefined);
-
-      await adapter.setFanMode(unitId, zone, fanMode);
-
-      expect(setFanSpeedSpy).toHaveBeenCalledWith(unitId, zone, fanSpeed);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'writeHold', 1);
     });
   });
 
@@ -201,12 +195,11 @@ describe('HopmannAdapter', () => {
 
     it('should use temperature register 0 for type B', async () => {
       const SetTemperature = 21.5;
-      readOrWriteSpy.mockResolvedValue(215);
 
       const result = await adapter.getSetpoint(unitId, zone);
 
       expect(result).toBe(SetTemperature);
-      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 0, 'readInput', 1);
+      expect(readOrWriteSpy).not.toHaveBeenCalled();
     });
 
     it('should use fan register 1 for type B', async () => {
@@ -219,14 +212,14 @@ describe('HopmannAdapter', () => {
       expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'readHold', 1);
     });
 
-    it('should use power register 2 for type B when setting fan speed', async () => {
+    it('should use fan register 1 for type B when setting fan speed', async () => {
       const fanSpeed = 3;
       readOrWriteSpy.mockResolvedValue(undefined);
 
       await adapter.setFanSpeed(unitId, zone, fanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 2, 'writeHold', 1,);
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 1, 'writeHold', 3,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'writeHold', 3);
     });
 
     it('should write fan speed 0 correctly for type B', async () => {
@@ -235,8 +228,8 @@ describe('HopmannAdapter', () => {
 
       await adapter.setFanSpeed(unitId, zone, fanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 2, 'writeHold', 0,);
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 1, 'writeHold', 0,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'writeHold', 0);
     });
 
     it('should write auto fan speed correctly for type B', async () => {
@@ -245,8 +238,8 @@ describe('HopmannAdapter', () => {
 
       await adapter.setFanSpeed(unitId, zone, fanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 2, 'writeHold', 1,);
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 1, 'writeHold', 2,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 1, 'writeHold', 2);
     });
   });
 
@@ -262,12 +255,11 @@ describe('HopmannAdapter', () => {
 
     it('should use fallback temperature register 100', async () => {
       const setTemperature = 20.5;
-      readOrWriteSpy.mockResolvedValue(205);
 
       const result = await adapter.getSetpoint(unitId, zone);
 
       expect(result).toBe(setTemperature);
-      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 100, 'readInput', 1);
+      expect(readOrWriteSpy).not.toHaveBeenCalled();
     });
 
     it('should use fallback fan register 102', async () => {
@@ -286,8 +278,8 @@ describe('HopmannAdapter', () => {
 
       await adapter.setFanSpeed(unitId, zone, fanSpeed);
 
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(1, unitId, 102, 'writeHold', 1,);
-      expect(readOrWriteSpy).toHaveBeenNthCalledWith(2, unitId, 102, 'writeHold', 30,);
+      expect(readOrWriteSpy).toHaveBeenCalledTimes(1);
+      expect(readOrWriteSpy).toHaveBeenCalledWith(unitId, 102, 'writeHold', 30);
     });
 
     it('should decode fan speed /10 for unknown type', async () => {

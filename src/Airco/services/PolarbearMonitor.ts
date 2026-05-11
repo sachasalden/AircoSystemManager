@@ -140,12 +140,17 @@ export default class PolarbearMonitor {
             zone: message.zone,
           });
 
+          const normalizedValue = this.normalizeSyncValue(
+            message.property,
+            message.value,
+          );
+
           await this.writeProperty(
             conn.poller,
             unitId,
             message.zone,
             message.property,
-            message.value,
+            normalizedValue,
           );
 
           this.echoGuard.remember(
@@ -153,12 +158,12 @@ export default class PolarbearMonitor {
             unitId,
             message.zone,
             message.property,
-            message.value,
+            normalizedValue,
           );
 
           this.lastState.set(
             createStateKey(panel.id, unitId, message.zone, message.property),
-            message.value,
+            normalizedValue,
           );
         }
       } catch (error) {
@@ -205,7 +210,10 @@ export default class PolarbearMonitor {
     }
 
     if ((flags & fanModeBit) !== 0) {
-      const value = await poller.getPendingFanMode(unitId, zone);
+      const value = this.normalizeSyncValue(
+        'fanMode',
+        await poller.getPendingFanMode(unitId, zone),
+      );
 
       await poller.clearFlag(unitId, zone, 'fanMode', flags);
 
@@ -232,16 +240,34 @@ export default class PolarbearMonitor {
       return;
     }
 
+    const normalizedValue = this.normalizeSyncValue(property, value);
+
     if (
-      this.echoGuard.consumeIfExpected(panelId, unitId, zone, property, value)
+      this.echoGuard.consumeIfExpected(
+        panelId,
+        unitId,
+        zone,
+        property,
+        normalizedValue,
+      )
     ) {
       return;
     }
 
-    this.lastState.set(createStateKey(panelId, unitId, zone, property), value);
+    this.lastState.set(
+      createStateKey(panelId, unitId, zone, property),
+      normalizedValue,
+    );
 
     // Zorg dat andere panel-units in dezelfde room ook direct gelijk lopen.
-    await this.syncSiblingPanels(room, panelId, unitId, zone, property, value);
+    await this.syncSiblingPanels(
+      room,
+      panelId,
+      unitId,
+      zone,
+      property,
+      normalizedValue,
+    );
 
     console.log('[PolarbearMonitor] local panel change detected', {
       roomId: room.roomId,
@@ -249,7 +275,7 @@ export default class PolarbearMonitor {
       unitId,
       zone,
       property,
-      value,
+      value: normalizedValue,
     });
 
     await this.onPanelChange({
@@ -260,7 +286,7 @@ export default class PolarbearMonitor {
       unitId,
       zone,
       property,
-      value,
+      value: normalizedValue,
     });
   }
 
@@ -307,12 +333,14 @@ export default class PolarbearMonitor {
             value,
           });
 
+          const normalizedValue = this.normalizeSyncValue(property, value);
+
           await this.writeProperty(
             conn.poller,
             targetUnitId,
             zone,
             property,
-            value,
+            normalizedValue,
           );
 
           this.echoGuard.remember(
@@ -320,12 +348,12 @@ export default class PolarbearMonitor {
             targetUnitId,
             zone,
             property,
-            value,
+            normalizedValue,
           );
 
           this.lastState.set(
             createStateKey(panel.id, targetUnitId, zone, property),
-            value,
+            normalizedValue,
           );
         }
       } catch (error) {
@@ -409,7 +437,7 @@ export default class PolarbearMonitor {
       setpoint: zoneSnapshot.setpoint,
       virtualTemperature: zoneSnapshot.virtualTemp,
       fanSpeed: zoneSnapshot.fanSpeed,
-      fanMode: zoneSnapshot.fanMode,
+      fanMode: this.normalizeSyncValue('fanMode', zoneSnapshot.fanMode),
     };
   }
 
@@ -434,6 +462,14 @@ export default class PolarbearMonitor {
         await poller.setFanMode(unitId, zone, value);
         return;
     }
+  }
+
+  private normalizeSyncValue(property: SyncProperty, value: number): number {
+    if (property !== 'fanMode') {
+      return value;
+    }
+
+    return Number(value) === 0 ? 0 : 1;
   }
 
   private getConnKey(ip: string, port: number): string {

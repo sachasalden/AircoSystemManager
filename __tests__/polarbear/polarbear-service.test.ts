@@ -123,13 +123,13 @@ describe('PolarbearService', () => {
     const result = await service.getFanMode(1, 2);
 
     expect(client.readHoldingRegisters).toHaveBeenCalledWith(706, 1);
-    expect(result).toBe(4);
+    expect(result).toBe(1);
   });
 
   it('should set fan mode', async () => {
     await service.setFanMode(1, 1, 5);
 
-    expect(client.writeRegister).toHaveBeenCalledWith(606, 5);
+    expect(client.writeRegister).toHaveBeenCalledWith(606, 1);
   });
 
   it('should get flags', async () => {
@@ -198,6 +198,6 @@ describe('PolarbearService', () => {
     const result = await service.getPendingFanMode(1, 2);
 
     expect(client.readHoldingRegisters).toHaveBeenCalledWith(118, 1);
-    expect(result).toBe(5);
+    expect(result).toBe(1);
   });
 });

@@ -92,26 +92,19 @@ describe('HeinEnHopmanGooilandAdapter', () => {
     await expect(adapter.getFanSpeed(unitId, zone)).resolves.toBe(-1);
   });
 
-  it('should write fan speed and fan mode through the fan setpoint address', async () => {
+  it('should write fan speed without fan mode touching the fan setpoint address', async () => {
     getRegisterSpy.mockResolvedValue(undefined);
 
     await adapter.setFanSpeed(unitId, zone, 4);
     await adapter.setFanMode(unitId, zone, 2);
 
-    expect(getRegisterSpy).toHaveBeenNthCalledWith(
-      1,
-      unitId,
-      14,
-      'writeSingle',
-      40,
-    );
-    expect(getRegisterSpy).toHaveBeenNthCalledWith(
-      2,
-      unitId,
-      14,
-      'writeSingle',
-      20,
-    );
+    expect(getRegisterSpy).toHaveBeenCalledTimes(1);
+    expect(getRegisterSpy).toHaveBeenCalledWith(unitId, 14, 'writeSingle', 40);
+  });
+
+  it('should expose fan mode as auto without deriving it from fan speed', async () => {
+    await expect(adapter.getFanMode(unitId, zone)).resolves.toBe(1);
+    expect(getRegisterSpy).not.toHaveBeenCalled();
   });
 
   it('should throw when a required register address is missing', async () => {
