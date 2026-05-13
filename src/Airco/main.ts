@@ -1,18 +1,8 @@
-import path from 'path';
 import dotenv from 'dotenv';
 import AircoDeviceController from './controllers/AircoDeviceController.ts';
 import { EnvironmentDeviceRepository } from './repositories/EnvironmentDeviceRepository.ts';
 import { EnvironmentDeviceController } from './controllers/EnvironmentDeviceController.ts';
 import { EnvironmentDeviceService } from './services/EnvironmentDeviceService.ts';
-
-dotenv.config({
-  path: path.resolve(process.cwd(), '.env'),
-});
-
-console.log('[main] cwd =', process.cwd());
-console.log('[main] TEST_ZONE_ID =', process.env.TEST_ZONE_ID);
-console.log('[main] TEST_ROOM_ID =', process.env.TEST_ROOM_ID);
-
 import express from 'express';
 import cors from 'cors';
 
@@ -31,13 +21,17 @@ import createEnvironmentDevicesRoute from './routes/EnvironmentDevicesRoute';
 import WallpanelInsightsStore from './services/WallpanelInsightsStore';
 import AircoInsightsStore from './services/AircoInsightsStore';
 
+
+dotenv.config();
+
+
 const app = express();
 
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
-const mongoUri = process.env.MONGODB_URI || 'mongodb://192.168.55.10:27017';
-const mqttBrokerUrl = process.env.MQTT_BROKER || 'mqtt://192.168.55.10';
+const mongoUri = process.env.MONGODB_URI;
+const mqttBrokerUrl = process.env.MQTT_BROKER;
 const mqttTopicPrefix = process.env.MQTT_TOPIC_PREFIX || 'airco/sync';
 const sourceInstanceId =
   process.env.SYNC_INSTANCE_ID ||

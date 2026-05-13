@@ -353,22 +353,4 @@ TopologyRoom --> TopologyPanel
 TopologyRoom --> TopologyAirco
 TopologyAirco --> AirconditionerData
 TopologyAirco --> EnvironmentDevice
-
-note bottom of SyncMainLoop
-  Centrale orchestrator:
-  ververst topology, pollt panelen en airco's,
-  filtert echo's en synchroniseert via MQTT.
-end note
-
-note bottom of TopologyService
-  Bouwt de runtime-topologie per room
-  door panel devices, airco devices en
-  environment devices te koppelen.
-end note
-
-note right of AircoController
-  Bestaat naast de nieuwere SyncMainLoop-flow
-  als directe adaptergestuurde control-path.
-end note
-
 @enduml
