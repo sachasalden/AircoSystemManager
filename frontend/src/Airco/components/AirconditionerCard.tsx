@@ -273,7 +273,6 @@ export default function AirconditionerCard({
             supportedEnvironmentDeviceTypes={supportedEnvironmentDeviceTypes}
             onSubmit={saveEdit}
             submitLabel="Save"
-            resetLabel="Cancel"
           />
         )}
       </div>

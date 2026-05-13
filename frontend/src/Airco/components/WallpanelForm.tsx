@@ -20,11 +20,17 @@ type WallpanelFormValue = {
 type WallpanelFormProps = {
   initialValue?: Partial<WallpanelFormValue>;
   onSubmit: (value: WallpanelFormValue) => void;
+  onCancel?: () => void;
+  submitLabel?: string;
+  resetLabel?: string;
 };
 
 export default function WallpanelForm({
   initialValue,
   onSubmit,
+  onCancel,
+  submitLabel = 'Add',
+  resetLabel = 'Reset',
 }: WallpanelFormProps) {
   const [name, setName] = useState(initialValue?.name ?? '');
   const [ip, setIp] = useState(initialValue?.ip ?? '');
@@ -123,11 +129,16 @@ export default function WallpanelForm({
           className="btn add-btn"
           type="button"
         >
-          Add
+          {submitLabel}
         </button>
         <button onClick={resetForm} className="btn ghost-btn" type="button">
-          Reset
+          {resetLabel}
         </button>
+        {onCancel && (
+          <button onClick={onCancel} className="btn ghost-btn" type="button">
+            Cancel
+          </button>
+        )}
       </FormActions>
     </div>
   );

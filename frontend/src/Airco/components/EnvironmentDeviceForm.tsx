@@ -43,7 +43,7 @@ export default function EnvironmentDeviceForm({
     setName(initialValue?.name ?? 'New');
     setType(initialValue?.type ?? defaultType);
     setIp(initialValue?.ip ?? '');
-    setPort(initialValue?.port ?? '502');
+    setPort(initialValue?.port ?? '');
     setBidirectional(initialValue?.bidirectional ?? true);
   }, [initialValue, defaultType]);
 
@@ -51,7 +51,7 @@ export default function EnvironmentDeviceForm({
     setName(initialValue?.name ?? 'New');
     setType(initialValue?.type ?? defaultType);
     setIp(initialValue?.ip ?? '');
-    setPort(initialValue?.port ?? '502');
+    setPort(initialValue?.port ?? '');
     setBidirectional(initialValue?.bidirectional ?? true);
   }
 
@@ -79,7 +79,7 @@ export default function EnvironmentDeviceForm({
         <TextInput
           value={ip}
           onChange={setIp}
-          placeholder="192.168.55.10"
+          placeholder="192.168.xx.xx"
         />
       </Field>
 

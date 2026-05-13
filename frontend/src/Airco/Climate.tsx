@@ -42,6 +42,7 @@ export default function Climate() {
   const [aircoModalOpen, setAircoModalOpen] = useState(false);
   const [aircoToDelete, setAircoToDelete] = useState<string | null>(null);
 
+  const [showWallpanelForm, setShowWallpanelForm] = useState(false);
   const [showAircoForm, setShowAircoForm] = useState(false);
 
   useEffect(() => {
@@ -198,6 +199,7 @@ export default function Climate() {
               },
         ),
       );
+      setShowWallpanelForm(false);
     } catch (err) {
       console.error('Failed to add device', err);
       window.alert('Failed to add wallpanel');
@@ -455,6 +457,7 @@ export default function Climate() {
             setActiveView('aircoSystemDevices');
             setSelectedZoneId(null);
             setSelectedRoomId(null);
+            setShowWallpanelForm(false);
             setShowAircoForm(false);
           }}
         >
@@ -465,6 +468,7 @@ export default function Climate() {
           className={`menu-item ${activeView === 'wallpanelInsights' ? 'active' : ''}`}
           onClick={() => {
             setActiveView('wallpanelInsights');
+            setShowWallpanelForm(false);
             setShowAircoForm(false);
           }}
         >
@@ -475,6 +479,7 @@ export default function Climate() {
           className={`menu-item ${activeView === 'aircoInsights' ? 'active' : ''}`}
           onClick={() => {
             setActiveView('aircoInsights');
+            setShowWallpanelForm(false);
             setShowAircoForm(false);
           }}
         >
@@ -493,6 +498,7 @@ export default function Climate() {
               setActiveView('zones');
               setSelectedZoneId(zone.id);
               setSelectedRoomId(null);
+              setShowWallpanelForm(false);
               setShowAircoForm(false);
             }}
           >
@@ -558,6 +564,7 @@ export default function Climate() {
                         }`}
                         onClick={() => {
                           setSelectedRoomId(room.id);
+                          setShowWallpanelForm(false);
                           setShowAircoForm(false);
                         }}
                         type="button"
@@ -572,7 +579,38 @@ export default function Climate() {
 
             {selectedRoom ? (
               <>
-                <h4>Wallpanels</h4>
+                <div
+                  style={{
+                    marginBottom: 12,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <h4 style={{ margin: 0 }}>Wallpanels</h4>
+                  {selectedRoom.aircopanels.length === 0 && (
+                    <button
+                      type="button"
+                      className="btn add-btn"
+                      onClick={() => setShowWallpanelForm((state) => !state)}
+                    >
+                      {showWallpanelForm ? 'Close' : 'New wallpanel'}
+                    </button>
+                  )}
+                </div>
+
+                {showWallpanelForm && selectedRoom.aircopanels.length === 0 && (
+                  <main className="climate-panel" style={{ marginBottom: 24 }}>
+                    <h5 className="climate-title">Wallpanel - Add device</h5>
+
+                    <WallpanelForm
+                      onSubmit={addWallpanel}
+                      onCancel={() => {
+                        setShowWallpanelForm(false);
+                      }}
+                    />
+                  </main>
+                )}
 
                 <div className="cards-grid">
                   {selectedRoom.aircopanels.length === 0 ? (
@@ -615,7 +653,7 @@ export default function Climate() {
 
                 {showAircoForm && (
                   <main className="climate-panel" style={{ marginBottom: 24 }}>
-                    <h5 className="climate-title">Airconditioning — Add device</h5>
+                    <h5 className="climate-title">Airconditioning - Add device</h5>
 
                     <AirconditionerForm
                       environmentDevices={environmentDevices}
@@ -664,27 +702,6 @@ export default function Climate() {
               </div>
             )}
 
-            {selectedZone && selectedRoom && (
-              <>
-                {selectedRoom.aircopanels.length === 0 ? (
-                  <main className="climate-panel" style={{ marginTop: 24 }}>
-                    <h5 className="climate-title">Wallpanel — Add device</h5>
-
-                    <WallpanelForm
-                      onSubmit={addWallpanel}
-                    />
-                  </main>
-                ) : (
-                  <main className="climate-panel" style={{ marginTop: 24 }}>
-                    <h5 className="climate-title">Wallpanel — Add device</h5>
-                    <p className="notice">
-                      This room already has a wallpanel. Only one wallpanel is
-                      allowed per room.
-                    </p>
-                  </main>
-                )}
-              </>
-            )}
           </>
         )}
       </div>
