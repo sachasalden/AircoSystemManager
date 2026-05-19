@@ -21,18 +21,16 @@ import createEnvironmentDevicesRoute from './routes/EnvironmentDevicesRoute';
 import WallpanelInsightsStore from './services/WallpanelInsightsStore';
 import AircoInsightsStore from './services/AircoInsightsStore';
 
-
 dotenv.config();
-
 
 const app = express();
 
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
-const mongoUri = process.env.MONGODB_URI;
-const mqttBrokerUrl = process.env.MQTT_BROKER;
-const mqttTopicPrefix = process.env.MQTT_TOPIC_PREFIX || 'airco/sync';
+const mongoUri: any = process.env.MONGODB_URI;
+const mqttBrokerUrl: any= process.env.MQTT_BROKER;
+const mqttTopicPrefix: any= process.env.MQTT_TOPIC_PREFIX;
 const sourceInstanceId =
   process.env.SYNC_INSTANCE_ID ||
   `${process.env.HOSTNAME || 'node'}-${process.pid}`;
