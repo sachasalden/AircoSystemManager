@@ -1,7 +1,7 @@
 import {
   AircopanelRepository,
-  type Device,
   type AirconditionerDevice,
+  type Device,
 } from '../repositories/WallpanelRepository';
 import {
   EnvironmentDeviceRepository,
@@ -10,7 +10,7 @@ import {
 import type { TopologyRoom } from './SyncTypes';
 
 type ZoneDoc = {
-  _id: any;
+  _id: unknown;
   name: string;
   rooms?: Array<{
     id: string;
@@ -18,12 +18,19 @@ type ZoneDoc = {
   }>;
 };
 
-export default class TopologyService {
-  private readonly TEST_ZONE_ID =
-    process.env.TEST_ZONE_ID?.trim() || '691ee9f917ddcc79daf9fe84';
+type PanelDevice = Device & {
+  zoneId: string;
+  roomId: string;
+};
 
-  private readonly TEST_ROOM_ID =
-    process.env.TEST_ROOM_ID?.trim() || '2134af85-4377-2330-af2d-72143bec6574';
+type AircoDevice = AirconditionerDevice & {
+  zoneId: string;
+  roomId: string;
+};
+
+export default class TopologyService {
+  private readonly testZoneId = process.env.TEST_ZONE_ID?.trim() || '691ee9f917ddcc79daf9fe84';
+  private readonly testRoomId = process.env.TEST_ROOM_ID?.trim() || '2134af85-4377-2330-af2d-72143bec6574';
 
   constructor(
     private repository: AircopanelRepository,
@@ -31,108 +38,119 @@ export default class TopologyService {
   ) {}
 
   async getRooms(): Promise<TopologyRoom[]> {
-    console.log('[TopologyService] TEST_ZONE_ID =', this.TEST_ZONE_ID);
-    console.log('[TopologyService] TEST_ROOM_ID =', this.TEST_ROOM_ID);
-
     const [zones, panels, aircos, environmentDevices] = await Promise.all([
       this.repository.getZones() as Promise<ZoneDoc[]>,
-      this.repository.getDevices() as Promise<
-        (Device & {
-          zoneId: string;
-          roomId: string;
-        })[]
-      >,
-      this.repository.getAircoDevices() as Promise<
-        (AirconditionerDevice & {
-          zoneId: string;
-          roomId: string;
-        })[]
-      >,
+      this.repository.getDevices() as Promise<PanelDevice[]>,
+      this.repository.getAircoDevices() as Promise<AircoDevice[]>,
       this.environmentDeviceRepository.getDevices() as Promise<EnvironmentDevice[]>,
     ]);
 
-    const rooms: TopologyRoom[] = [];
-
-    for (const zone of zones) {
-      const zoneId = zone._id.toString().trim();
-
-      if (zoneId !== this.TEST_ZONE_ID) {
-        continue;
-      }
-
-      for (const room of zone.rooms || []) {
-        const roomId = room.id.trim();
-
-        if (roomId !== this.TEST_ROOM_ID) {
-          continue;
-        }
-
-        const roomPanels = panels
-          .filter(
-            (d) =>
-              d.zoneId?.toString().trim() === zoneId &&
-              d.roomId?.toString().trim() === roomId,
-          )
-          .map((d) => ({
-            id: d.id,
-            ip: d.ip,
-            port: d.port,
-            ids: (d.ids || []).map(Number).filter(Number.isFinite),
-            type: d.type,
-          }));
-
-        const roomAircos = aircos
-          .filter(
-            (d) =>
-              d.zoneId?.toString().trim() === zoneId &&
-              d.roomId?.toString().trim() === roomId,
-          )
-          .map((d) => {
-            const linkedEnvironmentDevice = environmentDevices.find(
-              (environmentDevice) =>
-                environmentDevice.id === d.data?.deviceId,
-            );
-
-            return {
-              id: d.id,
-              deviceType: d.deviceType,
-              setTemperature: d.setTemperature,
-              currentTemperature: d.currentTemperature,
-              data: d.data,
-              environmentDevice: linkedEnvironmentDevice
-                ? {
-                    id: linkedEnvironmentDevice.id,
-                    name: linkedEnvironmentDevice.name,
-                    type: linkedEnvironmentDevice.type,
-                    ip: linkedEnvironmentDevice.ip,
-                    port: Number(linkedEnvironmentDevice.port),
-                    bidirectional: linkedEnvironmentDevice.bidirectional,
-                  }
-                : undefined,
-            };
-          });
-
-        rooms.push({
-          zoneId,
-          roomId,
-          roomName: room.name,
-          panels: roomPanels,
-          aircos: roomAircos,
-        });
-      }
-    }
+    const rooms = zones.flatMap((zone) =>
+      (zone.rooms || [])
+        .filter((room) => this.isSelectedRoom(zone, room.id))
+        .map((room) => this.toTopologyRoom(zone, room, panels, aircos, environmentDevices)),
+    );
 
     console.log(
       '[TopologyService] selected rooms =',
-      rooms.map((r) => ({
-        zoneId: r.zoneId,
-        roomId: r.roomId,
-        roomName: r.roomName,
-        panelCount: r.panels.length,
-        aircoCount: r.aircos.length,
+      rooms.map((room) => ({
+        zoneId: room.zoneId,
+        roomId: room.roomId,
+        roomName: room.roomName,
+        panelCount: room.panels.length,
+        aircoCount: room.aircos.length,
       })),
     );
 
     return rooms;
+  }
+
+  private toTopologyRoom(
+    zone: ZoneDoc,
+    room: { id: string; name: string },
+    panels: PanelDevice[],
+    aircos: AircoDevice[],
+    environmentDevices: EnvironmentDevice[],
+  ): TopologyRoom {
+    const zoneId = this.cleanId(zone._id);
+    const roomId = this.cleanId(room.id);
+
+    return {
+      zoneId,
+      roomId,
+      roomName: room.name,
+      panels: panels
+        .filter((panel) => this.isInRoom(panel, zoneId, roomId))
+        .map((panel) => ({
+          id: panel.id,
+          ip: panel.ip,
+          port: panel.port,
+          ids: this.normalizeIds(panel.ids),
+          type: panel.type,
+        })),
+      aircos: aircos
+        .filter((airco) => this.isInRoom(airco, zoneId, roomId))
+        .map((airco) => ({
+          id: airco.id,
+          deviceType: airco.deviceType,
+          setTemperature: airco.setTemperature,
+          currentTemperature: airco.currentTemperature,
+          data: airco.data,
+          environmentDevice: this.findEnvironmentDevice(
+            airco.data?.deviceId,
+            environmentDevices,
+          ),
+        })),
+    };
+  }
+
+  private isSelectedRoom(zone: ZoneDoc, roomId: string): boolean {
+    return (
+      this.cleanId(zone._id) === this.testZoneId &&
+      this.cleanId(roomId) === this.testRoomId
+    );
+  }
+
+  private isInRoom(
+    device: { zoneId?: unknown; roomId?: unknown },
+    zoneId: string,
+    roomId: string,
+  ): boolean {
+    return (
+      this.cleanId(device.zoneId) === zoneId &&
+      this.cleanId(device.roomId) === roomId
+    );
+  }
+
+  private findEnvironmentDevice(
+    deviceId: unknown,
+    environmentDevices: EnvironmentDevice[],
+  ): TopologyRoom['aircos'][number]['environmentDevice'] {
+    const device = environmentDevices.find(
+      (environmentDevice) => environmentDevice.id === deviceId,
+    );
+
+    if (!device) {
+      return undefined;
+    }
+
+    return {
+      id: device.id,
+      name: device.name,
+      type: device.type,
+      ip: device.ip,
+      port: Number(device.port),
+      bidirectional: device.bidirectional,
+    };
+  }
+
+  private cleanId(value: unknown): string {
+    return String(value ?? '').trim();
+  }
+
+  private normalizeIds(ids?: unknown[]): number[] {
+    return [...new Set((ids || []).map(Number))]
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
   }
 }

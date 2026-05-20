@@ -2,8 +2,8 @@ import WallpanelPoller, { type FullSnapshot } from './WallpanelPoller';
 import SyncEchoGuard from './SyncEchoGuard';
 import type { FlagType } from './PolarbearService';
 import {
-  PANEL_TO_AIRCO_PROPERTIES,
   AIRCO_TO_PANEL_PROPERTIES,
+  PANEL_TO_AIRCO_PROPERTIES,
   createStateKey,
   sameNumericValue,
   type SyncMessage,
@@ -15,6 +15,12 @@ import {
 type Snapshot = Record<SyncProperty, number>;
 type ConnectionKey = string;
 type CandidateType = Extract<SyncProperty, 'setpoint' | 'fanMode'>;
+type PanelWritableProperty = Extract<
+  SyncProperty,
+  'setpoint' | 'virtualTemperature' | 'fanSpeed' | 'fanMode'
+>;
+
+type Panel = TopologyRoom['panels'][number];
 
 type ConnectionState = {
   poller: WallpanelPoller;
@@ -62,19 +68,19 @@ type Candidate =
       fanSpeed: number;
     });
 
-const flagBits: Record<FlagType, Record<Zone, number>> = Object.freeze({
-  setpoint: Object.freeze({
-    1: 0,
-    2: 8,
-  }),
-  fanMode: Object.freeze({
-    1: 1,
-    2: 9,
-  }),
-});
+const ZONES = [1, 2] as const;
+
+const FLAG_BITS: Record<FlagType, Record<Zone, number>> = {
+  setpoint: { 1: 0, 2: 8 },
+  fanMode: { 1: 1, 2: 9 },
+};
 
 function hasFlag(flags: number, zone: Zone, type: FlagType): boolean {
-  return (flags & (1 << flagBits[type][zone])) !== 0;
+  return (flags & (1 << FLAG_BITS[type][zone])) !== 0;
+}
+
+function clearFlag(flags: number, zone: Zone, type: FlagType): number {
+  return flags & ~(1 << FLAG_BITS[type][zone]);
 }
 
 function round1(value: number): number {
@@ -98,9 +104,24 @@ function isTimeoutError(error: unknown): boolean {
 
   return (
     err?.name === 'TransactionTimedOutError' ||
-    String(err?.message ?? '')
-      .toLowerCase()
-      .includes('timed out')
+    String(err?.message ?? '').toLowerCase().includes('timed out')
+  );
+}
+
+function isCandidateProperty(
+  property: SyncProperty,
+): property is CandidateType {
+  return property === 'setpoint' || property === 'fanMode';
+}
+
+function isPanelWritableProperty(
+  property: SyncProperty,
+): property is PanelWritableProperty {
+  return (
+    property === 'setpoint' ||
+    property === 'virtualTemperature' ||
+    property === 'fanSpeed' ||
+    property === 'fanMode'
   );
 }
 
@@ -133,11 +154,9 @@ export default class PolarbearMonitor {
   ) {}
 
   async stop(): Promise<void> {
-    for (const conn of this.connections.values()) {
-      try {
-        await conn.poller.stop();
-      } catch {}
-    }
+    await Promise.allSettled(
+      [...this.connections.values()].map((conn) => conn.poller.stop()),
+    );
 
     this.connections.clear();
   }
@@ -145,41 +164,7 @@ export default class PolarbearMonitor {
   async pollRooms(rooms: TopologyRoom[]): Promise<void> {
     for (const room of rooms) {
       for (const panel of room.panels) {
-        if (!panel.ids.length) {
-          continue;
-        }
-
-        try {
-          const conn = await this.ensureConnection(
-            panel.ip,
-            panel.port,
-            panel.ids,
-          );
-
-          for (const unitId of panel.ids) {
-            const snapshot = await conn.poller.getSnapshot(unitId);
-
-            await this.clearStartupFlags(panel.id, unitId, conn.poller);
-
-            for (const zone of [1, 2] as const) {
-              await this.handleSnapshot(
-                room,
-                panel.id,
-                unitId,
-                zone,
-                this.toSyncSnapshot(snapshot, zone),
-                snapshot.timestamp,
-              );
-
-              await this.detectFlags(room, panel.id, unitId, zone, conn.poller);
-            }
-          }
-        } catch (error) {
-          console.error(
-            `[PolarbearMonitor] poll failed room=${room.roomName} panel=${panel.id}`,
-            error,
-          );
-        }
+        await this.pollPanel(room, panel);
       }
     }
 
@@ -190,16 +175,17 @@ export default class PolarbearMonitor {
     rooms: TopologyRoom[],
     message: SyncMessage,
   ): Promise<void> {
-    if (message.origin !== 'airco') {
-      return;
-    }
-
-    if (!AIRCO_TO_PANEL_PROPERTIES.includes(message.property)) {
+    if (
+      message.origin !== 'airco' ||
+      !AIRCO_TO_PANEL_PROPERTIES.includes(message.property)
+    ) {
       return;
     }
 
     const room = rooms.find(
-      (r) => r.zoneId === message.zoneId && r.roomId === message.roomId,
+      (candidate) =>
+        candidate.zoneId === message.zoneId &&
+        candidate.roomId === message.roomId,
     );
 
     if (!room) {
@@ -207,80 +193,90 @@ export default class PolarbearMonitor {
     }
 
     for (const panel of room.panels) {
-      if (!panel.ids.length) {
-        continue;
-      }
+      await this.applyAircoChangeToPanel(panel, message);
+    }
+  }
 
-      try {
-        const conn = await this.ensureConnection(
-          panel.ip,
-          panel.port,
-          panel.ids,
+  private async pollPanel(room: TopologyRoom, panel: Panel): Promise<void> {
+    if (!panel.ids.length) {
+      return;
+    }
+
+    try {
+      const conn = await this.ensurePanelConnection(panel);
+
+      for (const unitId of panel.ids) {
+        const snapshot = await conn.poller.getSnapshot(unitId);
+
+        await this.clearStartupFlags(panel.id, unitId, conn.poller);
+
+        for (const zone of ZONES) {
+          await this.handleSnapshot(
+            room,
+            panel.id,
+            unitId,
+            zone,
+            this.toSyncSnapshot(snapshot, zone),
+            snapshot.timestamp,
+          );
+
+          await this.detectFlags(room, panel.id, unitId, zone, conn.poller);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `[PolarbearMonitor] poll failed room=${room.roomName} panel=${panel.id}`,
+        error,
+      );
+    }
+  }
+
+  private async applyAircoChangeToPanel(
+    panel: Panel,
+    message: SyncMessage,
+  ): Promise<void> {
+    if (!panel.ids.length || !isPanelWritableProperty(message.property)) {
+      return;
+    }
+
+    try {
+      const conn = await this.ensurePanelConnection(panel);
+
+      for (const unitId of panel.ids) {
+        const value = this.normalizeSyncValue(message.property, message.value);
+
+        await this.suppressCandidateWriteIfNeeded(
+          conn.poller,
+          panel.id,
+          unitId,
+          message.zone,
+          message.property,
+          value,
         );
 
-        for (const unitId of panel.ids) {
-          console.log('[PolarbearMonitor] applying airco change locally', {
-            panelId: panel.id,
-            unitId,
-            property: message.property,
-            value: message.value,
-            zone: message.zone,
-          });
-
-          const normalizedValue = this.normalizeSyncValue(
-            message.property,
-            message.value,
-          );
-          if (
-            message.property === 'setpoint' ||
-            message.property === 'fanMode'
-          ) {
-            const signature = this.propertySignature(
-              message.property,
-              normalizedValue,
-              message.property === 'fanMode'
-                ? await conn.poller.getFanSpeed(unitId, message.zone)
-                : undefined,
-            );
-
-            this.suppressOwnWrite(
-              panel.id,
-              unitId,
-              message.zone,
-              message.property,
-              signature,
-            );
-          }
-
-          await this.safeWrite(() =>
-            this.writeProperty(
-              conn.poller,
-              unitId,
-              message.zone,
-              message.property,
-              normalizedValue,
-            ),
-          );
-
-          this.echoGuard.remember(
-            panel.id,
+        await this.safeWrite(() =>
+          this.writeProperty(
+            conn.poller,
             unitId,
             message.zone,
             message.property,
-            normalizedValue,
-          );
+            value,
+          ),
+        );
 
-          this.lastState.set(
-            createStateKey(panel.id, unitId, message.zone, message.property),
-            normalizedValue,
-          );
-        }
-      } catch (error) {
-        console.error(
-          `[PolarbearMonitor] applyAircoChangeLocally failed panel=${panel.id}`,
-          error,
+        this.rememberLocalWrite(
+          panel.id,
+          unitId,
+          message.zone,
+          message.property,
+          value,
         );
       }
+    } catch (error) {
+      console.error(
+        `[PolarbearMonitor] applyAircoChangeLocally failed panel=${panel.id}`,
+        error,
+      );
     }
   }
 
@@ -292,12 +288,6 @@ export default class PolarbearMonitor {
     poller: WallpanelPoller,
   ): Promise<void> {
     const flags = await poller.getFlags(unitId);
-    const setpointCache = await this.updateSetpointCache(
-      panelId,
-      unitId,
-      zone,
-      poller,
-    );
 
     if (hasFlag(flags, zone, 'setpoint')) {
       await this.consumeSetpointFlag(
@@ -307,62 +297,11 @@ export default class PolarbearMonitor {
         zone,
         flags,
         poller,
-        setpointCache,
       );
     }
 
     if (hasFlag(flags, zone, 'fanMode')) {
       await this.consumeFanFlag(room, panelId, unitId, zone, flags, poller);
-    }
-  }
-
-  private async updateSetpointCache(
-    panelId: string,
-    unitId: number,
-    zone: Zone,
-    poller: WallpanelPoller,
-  ): Promise<SetpointCache> {
-    const key = this.sourceKey(panelId, unitId, zone, 'setpoint');
-    const previous = this.setpointCache.get(key);
-
-    try {
-      const value = round1(await poller.getPendingSetpoint(unitId, zone));
-      const signature = setpointSignature(value);
-
-      if (!previous || previous.signature !== signature) {
-        const next = {
-          value,
-          signature,
-          changedAt: Date.now(),
-        };
-
-        this.setpointCache.set(key, next);
-
-        console.log('[PolarbearMonitor] pending setpoint changed', {
-          panelId,
-          unitId,
-          zone,
-          previous: previous?.signature ?? 'none',
-          signature,
-        });
-
-        return next;
-      }
-
-      return previous;
-    } catch (error) {
-      console.error(
-        `[PolarbearMonitor] pending setpoint read failed panel=${panelId} unit=${unitId}`,
-        error,
-      );
-
-      return (
-        previous ?? {
-          value: 0,
-          signature: 'setpoint:0',
-          changedAt: 0,
-        }
-      );
     }
   }
 
@@ -373,8 +312,9 @@ export default class PolarbearMonitor {
     zone: Zone,
     flags: number,
     poller: WallpanelPoller,
-    cache: SetpointCache,
   ): Promise<void> {
+    const cache = await this.updateSetpointCache(panelId, unitId, zone, poller);
+
     await this.safeClearFlag(poller, unitId, zone, 'setpoint', flags);
 
     if (
@@ -386,34 +326,10 @@ export default class PolarbearMonitor {
         cache.signature,
       )
     ) {
-      console.log('[PolarbearMonitor] ignore own setpoint', {
-        panelId,
-        unitId,
-        zone,
-        value: cache.value,
-      });
       return;
     }
 
-    const key = this.candidateKey(room, zone, 'setpoint');
-    const existing = this.candidates.get(key);
-
-    if (
-      existing &&
-      existing.type === 'setpoint' &&
-      existing.sourceUnitId !== unitId &&
-      cache.changedAt < existing.changedAt
-    ) {
-      console.log('[PolarbearMonitor] stale setpoint ignored', {
-        panelId,
-        unitId,
-        zone,
-        value: cache.value,
-      });
-      return;
-    }
-
-    this.candidates.set(key, {
+    this.setCandidate({
       type: 'setpoint',
       room,
       sourcePanelId: panelId,
@@ -423,13 +339,6 @@ export default class PolarbearMonitor {
       signature: cache.signature,
       changedAt: cache.changedAt,
       createdAt: Date.now(),
-    });
-
-    console.log('[PolarbearMonitor] candidate setpoint', {
-      panelId,
-      unitId,
-      zone,
-      value: cache.value,
     });
   }
 
@@ -450,18 +359,11 @@ export default class PolarbearMonitor {
 
       await this.safeClearFlag(poller, unitId, zone, 'fanMode', flags);
 
-      if (
-        this.shouldIgnoreOwnWrite(panelId, unitId, zone, 'fanMode', signature)
-      ) {
-        console.log('[PolarbearMonitor] ignore own fan', {
-          panelId,
-          unitId,
-          zone,
-        });
+      if (this.shouldIgnoreOwnWrite(panelId, unitId, zone, 'fanMode', signature)) {
         return;
       }
 
-      this.candidates.set(this.candidateKey(room, zone, 'fanMode'), {
+      this.setCandidate({
         type: 'fanMode',
         room,
         sourcePanelId: panelId,
@@ -473,14 +375,6 @@ export default class PolarbearMonitor {
         changedAt: Date.now(),
         createdAt: Date.now(),
       });
-
-      console.log('[PolarbearMonitor] candidate fan', {
-        panelId,
-        unitId,
-        zone,
-        fanMode,
-        fanSpeed,
-      });
     } catch (error) {
       console.error(
         `[PolarbearMonitor] fan flag handling failed panel=${panelId} unit=${unitId}`,
@@ -489,10 +383,65 @@ export default class PolarbearMonitor {
     }
   }
 
+  private async updateSetpointCache(
+    panelId: string,
+    unitId: number,
+    zone: Zone,
+    poller: WallpanelPoller,
+  ): Promise<SetpointCache> {
+    const key = this.sourceKey(panelId, unitId, zone, 'setpoint');
+    const previous = this.setpointCache.get(key);
+
+    try {
+      const value = round1(await poller.getPendingSetpoint(unitId, zone));
+      const signature = setpointSignature(value);
+
+      if (previous?.signature === signature) {
+        return previous;
+      }
+
+      const next = {
+        value,
+        signature,
+        changedAt: Date.now(),
+      };
+
+      this.setpointCache.set(key, next);
+      return next;
+    } catch (error) {
+      console.error(
+        `[PolarbearMonitor] pending setpoint read failed panel=${panelId} unit=${unitId}`,
+        error,
+      );
+
+      return previous ?? {
+        value: 0,
+        signature: 'setpoint:0',
+        changedAt: 0,
+      };
+    }
+  }
+
+  private setCandidate(candidate: Candidate): void {
+    const key = this.candidateKey(candidate.room, candidate.zone, candidate.type);
+    const existing = this.candidates.get(key);
+
+    if (
+      candidate.type === 'setpoint' &&
+      existing?.type === 'setpoint' &&
+      existing.sourceUnitId !== candidate.sourceUnitId &&
+      candidate.changedAt < existing.changedAt
+    ) {
+      return;
+    }
+
+    this.candidates.set(key, candidate);
+  }
+
   private async processCandidates(): Promise<void> {
     const now = Date.now();
 
-    for (const [key, candidate] of Array.from(this.candidates.entries())) {
+    for (const [key, candidate] of this.candidates) {
       if (now - candidate.createdAt < this.debounceMs) {
         continue;
       }
@@ -543,21 +492,12 @@ export default class PolarbearMonitor {
 
   private async publishCandidate(
     candidate: Candidate,
-    property: Extract<SyncProperty, 'setpoint' | 'fanMode'>,
+    property: CandidateType,
     value: number,
   ): Promise<void> {
     if (!PANEL_TO_AIRCO_PROPERTIES.includes(property)) {
       return;
     }
-
-    console.log('[PolarbearMonitor] local panel change detected', {
-      roomId: candidate.room.roomId,
-      panelId: candidate.sourcePanelId,
-      unitId: candidate.sourceUnitId,
-      zone: candidate.zone,
-      property,
-      value,
-    });
 
     await this.onPanelChange({
       origin: 'panel',
@@ -580,11 +520,7 @@ export default class PolarbearMonitor {
     value: number,
     signature?: string,
   ): Promise<void> {
-    if (
-      property !== 'setpoint' &&
-      property !== 'fanMode' &&
-      property !== 'fanSpeed'
-    ) {
+    if (!isPanelWritableProperty(property) || property === 'virtualTemperature') {
       return;
     }
 
@@ -594,64 +530,30 @@ export default class PolarbearMonitor {
       }
 
       try {
-        const conn = await this.ensureConnection(
-          panel.ip,
-          panel.port,
-          panel.ids,
-        );
+        const conn = await this.ensurePanelConnection(panel);
 
-        for (const targetUnitId of panel.ids) {
-          if (panel.id === sourcePanelId && targetUnitId === sourceUnitId) {
+        for (const unitId of panel.ids) {
+          if (panel.id === sourcePanelId && unitId === sourceUnitId) {
             continue;
           }
 
-          console.log('[PolarbearMonitor] syncing sibling panel', {
-            sourcePanelId,
-            sourceUnitId,
-            targetPanelId: panel.id,
-            targetUnitId,
-            zone,
-            property,
-            value,
-          });
-
           const normalizedValue = this.normalizeSyncValue(property, value);
 
-          if (
-            signature &&
-            (property === 'setpoint' || property === 'fanMode')
-          ) {
-            this.suppressOwnWrite(
-              panel.id,
-              targetUnitId,
-              zone,
-              property,
-              signature,
-            );
+          if (signature && isCandidateProperty(property)) {
+            this.suppressOwnWrite(panel.id, unitId, zone, property, signature);
           }
 
           await this.safeWrite(() =>
             this.writeProperty(
               conn.poller,
-              targetUnitId,
+              unitId,
               zone,
               property,
               normalizedValue,
             ),
           );
 
-          this.echoGuard.remember(
-            panel.id,
-            targetUnitId,
-            zone,
-            property,
-            normalizedValue,
-          );
-
-          this.lastState.set(
-            createStateKey(panel.id, targetUnitId, zone, property),
-            normalizedValue,
-          );
+          this.rememberLocalWrite(panel.id, unitId, zone, property, normalizedValue);
         }
       } catch (error) {
         console.error(
@@ -689,30 +591,15 @@ export default class PolarbearMonitor {
 
       this.lastState.set(key, value);
 
-      if (previous === undefined) {
-        continue;
-      }
-
-      if (sameNumericValue(previous, value)) {
-        continue;
-      }
-
       if (
+        previous === undefined ||
+        sameNumericValue(previous, value) ||
         this.echoGuard.consumeIfExpected(panelId, unitId, zone, property, value)
       ) {
         continue;
       }
 
       if (property === 'virtualTemperature') {
-        console.log('[PolarbearMonitor] panel virtualTemperature changed', {
-          roomId: room.roomId,
-          panelId,
-          unitId,
-          zone,
-          value,
-          previous,
-        });
-
         await this.onPanelChange({
           origin: 'panel',
           zoneId: room.zoneId,
@@ -734,15 +621,47 @@ export default class PolarbearMonitor {
       setpoint: zoneSnapshot.setpoint,
       virtualTemperature: zoneSnapshot.virtualTemp,
       fanSpeed: zoneSnapshot.fanSpeed,
-      fanMode: this.normalizeSyncValue('fanMode', zoneSnapshot.fanMode),
+      fanMode: normalizeFanMode(zoneSnapshot.fanMode),
     };
+  }
+
+  private async suppressCandidateWriteIfNeeded(
+    poller: WallpanelPoller,
+    panelId: string,
+    unitId: number,
+    zone: Zone,
+    property: SyncProperty,
+    value: number,
+  ): Promise<void> {
+    if (!isCandidateProperty(property)) {
+      return;
+    }
+
+    const signature = this.propertySignature(
+      property,
+      value,
+      property === 'fanMode' ? await poller.getFanSpeed(unitId, zone) : undefined,
+    );
+
+    this.suppressOwnWrite(panelId, unitId, zone, property, signature);
+  }
+
+  private rememberLocalWrite(
+    panelId: string,
+    unitId: number,
+    zone: Zone,
+    property: SyncProperty,
+    value: number,
+  ): void {
+    this.echoGuard.remember(panelId, unitId, zone, property, value);
+    this.lastState.set(createStateKey(panelId, unitId, zone, property), value);
   }
 
   private async writeProperty(
     poller: WallpanelPoller,
     unitId: number,
     zone: Zone,
-    property: SyncProperty,
+    property: PanelWritableProperty,
     value: number,
   ): Promise<void> {
     switch (property) {
@@ -762,11 +681,7 @@ export default class PolarbearMonitor {
   }
 
   private normalizeSyncValue(property: SyncProperty, value: number): number {
-    if (property !== 'fanMode') {
-      return value;
-    }
-
-    return normalizeFanMode(value);
+    return property === 'fanMode' ? normalizeFanMode(value) : value;
   }
 
   private async clearStartupFlags(
@@ -783,22 +698,16 @@ export default class PolarbearMonitor {
     try {
       let flags = await poller.getFlags(unitId);
 
-      for (const zone of [1, 2] as const) {
-        if (hasFlag(flags, zone, 'setpoint')) {
-          await this.safeClearFlag(poller, unitId, zone, 'setpoint', flags);
-          flags = this.clearFlagValue(flags, zone, 'setpoint');
-        }
+      for (const zone of ZONES) {
+        for (const type of ['setpoint', 'fanMode'] as const) {
+          if (!hasFlag(flags, zone, type)) {
+            continue;
+          }
 
-        if (hasFlag(flags, zone, 'fanMode')) {
-          await this.safeClearFlag(poller, unitId, zone, 'fanMode', flags);
-          flags = this.clearFlagValue(flags, zone, 'fanMode');
+          await this.safeClearFlag(poller, unitId, zone, type, flags);
+          flags = clearFlag(flags, zone, type);
         }
       }
-
-      console.log('[PolarbearMonitor] startup flags cleared', {
-        panelId,
-        unitId,
-      });
     } catch (error) {
       console.error(
         `[PolarbearMonitor] startup flag clear failed panel=${panelId} unit=${unitId}`,
@@ -841,10 +750,6 @@ export default class PolarbearMonitor {
     }
   }
 
-  private clearFlagValue(flags: number, zone: Zone, type: FlagType): number {
-    return flags & ~(1 << flagBits[type][zone]);
-  }
-
   private candidateKey(
     room: TopologyRoom,
     zone: Zone,
@@ -867,11 +772,9 @@ export default class PolarbearMonitor {
     value: number,
     fanSpeed?: number,
   ): string {
-    if (property === 'setpoint') {
-      return setpointSignature(value);
-    }
-
-    return fanSignature(value, fanSpeed ?? 0);
+    return property === 'setpoint'
+      ? setpointSignature(value)
+      : fanSignature(value, fanSpeed ?? 0);
   }
 
   private suppressOwnWrite(
@@ -914,8 +817,8 @@ export default class PolarbearMonitor {
     return true;
   }
 
-  private getConnKey(ip: string, port: number): string {
-    return `${ip}:${port}`;
+  private ensurePanelConnection(panel: Panel): Promise<ConnectionState> {
+    return this.ensureConnection(panel.ip, panel.port, panel.ids);
   }
 
   private async ensureConnection(
@@ -923,7 +826,7 @@ export default class PolarbearMonitor {
     port: number,
     unitIds: number[],
   ): Promise<ConnectionState> {
-    const key = this.getConnKey(ip, port);
+    const key = `${ip}:${port}`;
     const nextUnitIds = this.normalizeUnitIds(unitIds);
 
     if (!nextUnitIds.length) {
@@ -932,18 +835,21 @@ export default class PolarbearMonitor {
 
     const existing = this.connections.get(key);
 
-    if (existing) {
-      const mergedUnitIds = this.mergeUnitIds(existing.unitIds, nextUnitIds);
-
-      if (mergedUnitIds.length === existing.unitIds.length) {
-        return existing;
-      }
-
-      await existing.poller.stop();
-      return this.createConnection(key, ip, port, mergedUnitIds);
+    if (!existing) {
+      return this.createConnection(key, ip, port, nextUnitIds);
     }
 
-    return this.createConnection(key, ip, port, nextUnitIds);
+    const mergedUnitIds = this.normalizeUnitIds([
+      ...existing.unitIds,
+      ...nextUnitIds,
+    ]);
+
+    if (mergedUnitIds.length === existing.unitIds.length) {
+      return existing;
+    }
+
+    await existing.poller.stop();
+    return this.createConnection(key, ip, port, mergedUnitIds);
   }
 
   private createConnection(
@@ -970,11 +876,7 @@ export default class PolarbearMonitor {
 
   private normalizeUnitIds(unitIds: number[]): number[] {
     return [...new Set(unitIds)]
-      .filter((unitId) => Number.isFinite(unitId))
+      .filter(Number.isFinite)
       .sort((a, b) => a - b);
-  }
-
-  private mergeUnitIds(current: number[], next: number[]): number[] {
-    return this.normalizeUnitIds([...current, ...next]);
   }
 }

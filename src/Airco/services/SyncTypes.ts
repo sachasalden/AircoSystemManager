@@ -42,44 +42,55 @@ export type TopologyRoom = {
   zoneId: string;
   roomId: string;
   roomName: string;
-  panels: Array<{
-    id: string;
-    ip: string;
-    port: number;
-    ids: number[];
-    type?: string;
-  }>;
-  aircos: Array<{
-    id: string;
-    deviceType?: string;
-    setTemperature?: number;
-    currentTemperature?: number;
-    data?: Record<string, any>;
-    environmentDevice?: {
-      id: string;
-      name: string;
-      type: string;
-      ip: string;
-      port: number;
-      bidirectional: boolean;
-    };
-  }>;
+  panels: PanelDevice[];
+  aircos: AircoDevice[];
 };
 
-export const SYNC_PROPERTIES: readonly SyncProperty[] = Object.freeze([
+export type PanelDevice = {
+  id: string;
+  ip: string;
+  port: number;
+  ids: number[];
+  type?: string;
+};
+
+export type AircoDevice = {
+  id: string;
+  deviceType?: string;
+  setTemperature?: number;
+  currentTemperature?: number;
+  data?: Record<string, any>;
+  environmentDevice?: EnvironmentDevice;
+};
+
+export type EnvironmentDevice = {
+  id: string;
+  name: string;
+  type: string;
+  ip: string;
+  port: number;
+  bidirectional: boolean;
+};
+
+export const SYNC_PROPERTIES = [
   'setpoint',
   'virtualTemperature',
   'fanSpeed',
   'fanMode',
-]);
+] as const satisfies readonly SyncProperty[];
 
-export const PANEL_TO_AIRCO_PROPERTIES: readonly SyncProperty[] = Object.freeze(
-  ['setpoint', 'fanSpeed', 'fanMode'],
-);
+export const PANEL_TO_AIRCO_PROPERTIES = [
+  'setpoint',
+  'fanSpeed',
+  'fanMode',
+] as const satisfies readonly SyncProperty[];
 
-export const AIRCO_TO_PANEL_PROPERTIES: readonly SyncProperty[] = Object.freeze(
-  ['setpoint', 'virtualTemperature', 'fanSpeed', 'fanMode'],
-);
+export const AIRCO_TO_PANEL_PROPERTIES = [
+  'setpoint',
+  'virtualTemperature',
+  'fanSpeed',
+  'fanMode',
+] as const satisfies readonly SyncProperty[];
 
 export function createStateKey(
   deviceId: string,

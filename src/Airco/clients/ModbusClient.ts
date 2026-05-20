@@ -1,10 +1,9 @@
 import ModbusRTU from 'modbus-serial';
 
 export default class ModbusClient {
-  private client: ModbusRTU;
+  private client = new ModbusRTU();
   private connected = false;
   private reconnecting = false;
-  private reconnectDelay = 5000;
   private lastHost?: string;
   private lastPort?: number;
   private lastRequestAt = 0;
@@ -13,9 +12,9 @@ export default class ModbusClient {
   constructor(
     private timeout = 10000,
     private requestGapMs = 0,
+    private reconnectDelayMs = 5000,
   ) {
-    this.client = new ModbusRTU();
-    this.client.setTimeout(this.timeout);
+    this.client.setTimeout(timeout);
   }
 
   async connect(host: string, port: number): Promise<void> {
@@ -27,10 +26,11 @@ export default class ModbusClient {
     }
 
     await new Promise<void>((resolve, reject) => {
-      (this.client as any).connectTelnet(host, { port }, (err: any) => {
-        if (err) {
+      (this.client as any).connectTelnet(host, { port }, (error: unknown) => {
+        if (error) {
           this.connected = false;
-          return reject(err);
+          reject(error);
+          return;
         }
 
         this.connected = true;
@@ -70,18 +70,12 @@ export default class ModbusClient {
     this.reconnecting = true;
     this.connected = false;
 
-    console.warn('Connection lost. Attempting to reconnect...');
-
     setTimeout(() => {
-      this.connect(this.lastHost!, this.lastPort!)
-        .then(() => {
-          console.log('Reconnected successfully');
-        })
-        .catch((err) => {
-          console.error('Reconnection failed:', err.message || err);
-          this.reconnecting = false;
-        });
-    }, this.reconnectDelay);
+      this.connect(this.lastHost!, this.lastPort!).catch((error) => {
+        console.error('Reconnection failed:', error?.message || error);
+        this.reconnecting = false;
+      });
+    }, this.reconnectDelayMs);
   }
 
   setID(id: number): void {
@@ -91,15 +85,18 @@ export default class ModbusClient {
   async readHoldingRegisters(register: number, count = 1): Promise<number[]> {
     return this.enqueue(async () => {
       await this.waitForRequestGap();
-      const res = await this.client.readHoldingRegisters(register, count);
+
+      const result = await this.client.readHoldingRegisters(register, count);
       this.lastRequestAt = Date.now();
-      return res.data;
+
+      return result.data;
     });
   }
 
   async writeRegister(register: number, value: number): Promise<void> {
     await this.enqueue(async () => {
       await this.waitForRequestGap();
+
       await this.client.writeRegister(register, value);
       this.lastRequestAt = Date.now();
     });
@@ -117,12 +114,7 @@ export default class ModbusClient {
   }
 
   private async waitForRequestGap(): Promise<void> {
-    if (this.requestGapMs <= 0) {
-      return;
-    }
-
-    const elapsed = Date.now() - this.lastRequestAt;
-    const waitMs = this.requestGapMs - elapsed;
+    const waitMs = this.requestGapMs - (Date.now() - this.lastRequestAt);
 
     if (waitMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));

@@ -10,91 +10,41 @@ export type PolarbearZoneSnapshot = {
   fanMode: number;
 };
 
-const registersV1 = Object.freeze({
-  Zone1Setpoint: 601,
-  Zone1FanMode: 606,
-  Zone1FanSpeed: 607,
-  Zone1VirtualTemp: 603,
-  Zone2Setpoint: 701,
-  Zone2FanMode: 706,
-  Zone2FanSpeed: 707,
-  Zone2VirtualTemp: 703,
-});
+const REGISTERS_V1 = {
+  zone1Setpoint: 601,
+  zone1FanMode: 606,
+  zone1FanSpeed: 607,
+  zone1VirtualTemp: 603,
+  zone2Setpoint: 701,
+  zone2FanMode: 706,
+  zone2FanSpeed: 707,
+  zone2VirtualTemp: 703,
+} as const;
 
-const registersV2 = Object.freeze({
-  DeviceType: 7001,
-  Zone1DisplayTemp: 21051,
-  Zone2DisplayTemp: 22051,
-});
+const REGISTERS_V2 = {
+  deviceType: 7001,
+  zone1DisplayTemp: 21051,
+  zone2DisplayTemp: 22051,
+} as const;
 
-const inputs = Object.freeze({
-  FlagReg0: 110,
-  FlagReg7: 117,
-  FlagReg8: 118,
-});
+const INPUTS = {
+  flags: 110,
+  zone1Flags: 117,
+  zone2Flags: 118,
+} as const;
 
-const flagBits: Record<FlagType, Record<Zone, number>> = Object.freeze({
-  setpoint: Object.freeze({
-    1: 0,
-    2: 8,
-  }),
-  fanMode: Object.freeze({
-    1: 1,
-    2: 9,
-  }),
-});
+const FLAG_BITS: Record<FlagType, Record<Zone, number>> = {
+  setpoint: { 1: 0, 2: 8 },
+  fanMode: { 1: 1, 2: 9 },
+};
 
 export default class PolarbearService {
   private detectedVersions = new Map<number, 'v1' | 'v2'>();
 
   constructor(private client: ModbusClient) {}
 
-  private getZoneFlagRegister(zone: Zone): number {
-    return zone === 1 ? inputs.FlagReg7 : inputs.FlagReg8;
-  }
-
-  private getFlagBit(zone: Zone, type: FlagType): number {
-    return flagBits[type][zone];
-  }
-
-  private getZoneRegister(zone: Zone, zone1: number, zone2: number): number {
-    return zone === 1 ? zone1 : zone2;
-  }
-
-  private normalizeFanMode(mode: number): number {
-    return Number(mode) === 0 ? 0 : 1;
-  }
-
-  private async detectVersion(unitId: number): Promise<'v1' | 'v2'> {
-    const cached = this.detectedVersions.get(unitId);
-
-    if (cached) {
-      return cached;
-    }
-
-    try {
-      this.client.setID(unitId);
-      await this.client.readHoldingRegisters(registersV2.DeviceType, 1);
-      this.detectedVersions.set(unitId, 'v2');
-      return 'v2';
-    } catch {
-      this.detectedVersions.set(unitId, 'v1');
-      return 'v1';
-    }
-  }
-
   async getSetpoint(unitId: number, zone: Zone): Promise<number> {
-    this.client.setID(unitId);
-
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1Setpoint,
-      registersV1.Zone2Setpoint,
-    );
-
-    const data = await this.client.readHoldingRegisters(register, 1);
-    const arr = Array.isArray(data) ? data : (data as any).data;
-    return arr[0] / 10;
+    return this.readTemperature(unitId, this.zoneRegister(zone, REGISTERS_V1.zone1Setpoint, REGISTERS_V1.zone2Setpoint));
   }
 
   async setSetpoint(
@@ -102,44 +52,29 @@ export default class PolarbearService {
     zone: Zone,
     temperature: number,
   ): Promise<void> {
-    this.client.setID(unitId);
-
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1Setpoint,
-      registersV1.Zone2Setpoint,
+    await this.writeTemperature(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1Setpoint, REGISTERS_V1.zone2Setpoint),
+      temperature,
     );
-
-    await this.client.writeRegister(register, Math.round(temperature * 10));
   }
 
   async getVirtualTemperature(unitId: number, zone: Zone): Promise<number> {
     const version = await this.detectVersion(unitId);
-    this.client.setID(unitId);
 
     if (version === 'v2') {
-      const register = this.getZoneRegister(
-        zone,
-        registersV2.Zone1DisplayTemp,
-        registersV2.Zone2DisplayTemp,
+      const value = await this.readRegister(
+        unitId,
+        this.zoneRegister(zone, REGISTERS_V2.zone1DisplayTemp, REGISTERS_V2.zone2DisplayTemp),
       );
 
-      const result = await this.client.readHoldingRegisters(register, 1);
-      const arr = Array.isArray(result) ? result : (result as any).data;
-
-      return (arr[0] & 0x03ff) / 10;
+      return (value & 0x03ff) / 10;
     }
 
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1VirtualTemp,
-      registersV1.Zone2VirtualTemp,
+    return this.readTemperature(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1VirtualTemp, REGISTERS_V1.zone2VirtualTemp),
     );
-
-    const result = await this.client.readHoldingRegisters(register, 1);
-    const arr = Array.isArray(result) ? result : (result as any).data;
-
-    return arr[0] / 10;
   }
 
   async setVirtualTemperature(
@@ -148,96 +83,61 @@ export default class PolarbearService {
     temperature: number,
   ): Promise<void> {
     const version = await this.detectVersion(unitId);
-    this.client.setID(unitId);
     const rawTemp = Math.round(temperature * 10);
 
     if (version === 'v2') {
-      const register = this.getZoneRegister(
+      const register = this.zoneRegister(
         zone,
-        registersV2.Zone1DisplayTemp,
-        registersV2.Zone2DisplayTemp,
+        REGISTERS_V2.zone1DisplayTemp,
+        REGISTERS_V2.zone2DisplayTemp,
       );
 
-      const currentData = await this.client.readHoldingRegisters(register, 1);
-      const arr = Array.isArray(currentData)
-        ? currentData
-        : (currentData as any).data;
-
-      const current = arr[0] ?? 0;
-      const nextValue = (current & ~0x03ff) | (rawTemp & 0x03ff);
-
-      await this.client.writeRegister(register, nextValue);
+      const current = await this.readRegister(unitId, register);
+      await this.writeRegister(unitId, register, (current & ~0x03ff) | (rawTemp & 0x03ff));
       return;
     }
 
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1VirtualTemp,
-      registersV1.Zone2VirtualTemp,
+    await this.writeRegister(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1VirtualTemp, REGISTERS_V1.zone2VirtualTemp),
+      rawTemp,
     );
-
-    await this.client.writeRegister(register, rawTemp);
   }
 
   async getFanSpeed(unitId: number, zone: Zone): Promise<number> {
-    this.client.setID(unitId);
-
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1FanSpeed,
-      registersV1.Zone2FanSpeed,
+    return this.readRegister(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1FanSpeed, REGISTERS_V1.zone2FanSpeed),
     );
-
-    const result = await this.client.readHoldingRegisters(register, 1);
-    const arr = Array.isArray(result) ? result : (result as any).data;
-
-    return arr[0];
   }
 
   async setFanSpeed(unitId: number, zone: Zone, speed: number): Promise<void> {
-    this.client.setID(unitId);
-
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1FanSpeed,
-      registersV1.Zone2FanSpeed,
+    await this.writeRegister(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1FanSpeed, REGISTERS_V1.zone2FanSpeed),
+      speed,
     );
-
-    await this.client.writeRegister(register, speed);
   }
 
   async getFanMode(unitId: number, zone: Zone): Promise<number> {
-    this.client.setID(unitId);
-
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1FanMode,
-      registersV1.Zone2FanMode,
+    const value = await this.readRegister(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1FanMode, REGISTERS_V1.zone2FanMode),
     );
 
-    const result = await this.client.readHoldingRegisters(register, 1);
-    const arr = Array.isArray(result) ? result : (result as any).data;
-
-    return this.normalizeFanMode(arr[0]);
+    return this.normalizeFanMode(value);
   }
 
   async setFanMode(unitId: number, zone: Zone, mode: number): Promise<void> {
-    this.client.setID(unitId);
-
-    const register = this.getZoneRegister(
-      zone,
-      registersV1.Zone1FanMode,
-      registersV1.Zone2FanMode,
+    await this.writeRegister(
+      unitId,
+      this.zoneRegister(zone, REGISTERS_V1.zone1FanMode, REGISTERS_V1.zone2FanMode),
+      this.normalizeFanMode(mode),
     );
-
-    await this.client.writeRegister(register, this.normalizeFanMode(mode));
   }
 
   async getFlags(unitId: number): Promise<number> {
-    this.client.setID(unitId);
-    const result = await this.client.readHoldingRegisters(inputs.FlagReg0, 1);
-    const arr = Array.isArray(result) ? result : (result as any).data;
-    return arr[0];
+    return this.readRegister(unitId, INPUTS.flags);
   }
 
   async setFlag(
@@ -246,15 +146,7 @@ export default class PolarbearService {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    const bit = this.getFlagBit(zone, type);
-    this.client.setID(unitId);
-
-    const flags = currentFlags ?? (await this.getFlags(unitId));
-    const nextValue = flags | (1 << bit);
-
-    if (nextValue !== flags) {
-      await this.client.writeRegister(inputs.FlagReg0, nextValue);
-    }
+    await this.updateFlag(unitId, zone, type, currentFlags, 'set');
   }
 
   async clearFlag(
@@ -263,26 +155,11 @@ export default class PolarbearService {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    const bit = this.getFlagBit(zone, type);
-    this.client.setID(unitId);
-
-    const flags = currentFlags ?? (await this.getFlags(unitId));
-    const nextValue = flags & ~(1 << bit);
-
-    if (nextValue !== flags) {
-      await this.client.writeRegister(inputs.FlagReg0, nextValue);
-    }
+    await this.updateFlag(unitId, zone, type, currentFlags, 'clear');
   }
 
   async getPendingSetpoint(unitId: number, zone: Zone): Promise<number> {
-    this.client.setID(unitId);
-
-    const result = await this.client.readHoldingRegisters(
-      this.getZoneFlagRegister(zone),
-      1,
-    );
-    const arr = Array.isArray(result) ? result : (result as any).data;
-    const value = arr[0] ?? 0;
+    const value = await this.readRegister(unitId, this.zoneFlagRegister(zone));
     const lowBits = (value & 0x00c0) >> 6;
     const highBits = (value & 0xff00) >> 8;
 
@@ -290,15 +167,9 @@ export default class PolarbearService {
   }
 
   async getPendingFanMode(unitId: number, zone: Zone): Promise<number> {
-    this.client.setID(unitId);
+    const value = await this.readRegister(unitId, this.zoneFlagRegister(zone));
 
-    const result = await this.client.readHoldingRegisters(
-      this.getZoneFlagRegister(zone),
-      1,
-    );
-    const arr = Array.isArray(result) ? result : (result as any).data;
-
-    return this.normalizeFanMode((arr[0] ?? 0) & 0x0007);
+    return this.normalizeFanMode(value & 0x0007);
   }
 
   async getZoneSnapshot(
@@ -325,5 +196,78 @@ export default class PolarbearService {
       pendingSetpoint: await this.getPendingSetpoint(unitId, zone),
       pendingFanMode: await this.getPendingFanMode(unitId, zone),
     };
+  }
+
+  private async detectVersion(unitId: number): Promise<'v1' | 'v2'> {
+    const cached = this.detectedVersions.get(unitId);
+
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      await this.readRegister(unitId, REGISTERS_V2.deviceType);
+      this.detectedVersions.set(unitId, 'v2');
+      return 'v2';
+    } catch {
+      this.detectedVersions.set(unitId, 'v1');
+      return 'v1';
+    }
+  }
+
+  private async updateFlag(
+    unitId: number,
+    zone: Zone,
+    type: FlagType,
+    currentFlags: number | undefined,
+    action: 'set' | 'clear',
+  ): Promise<void> {
+    const flags = currentFlags ?? (await this.getFlags(unitId));
+    const bit = 1 << FLAG_BITS[type][zone];
+    const nextFlags = action === 'set' ? flags | bit : flags & ~bit;
+
+    if (nextFlags !== flags) {
+      await this.writeRegister(unitId, INPUTS.flags, nextFlags);
+    }
+  }
+
+  private async readTemperature(unitId: number, register: number): Promise<number> {
+    return (await this.readRegister(unitId, register)) / 10;
+  }
+
+  private async writeTemperature(
+    unitId: number,
+    register: number,
+    temperature: number,
+  ): Promise<void> {
+    await this.writeRegister(unitId, register, Math.round(temperature * 10));
+  }
+
+  private async readRegister(unitId: number, register: number): Promise<number> {
+    this.client.setID(unitId);
+    const [value = 0] = await this.client.readHoldingRegisters(register, 1);
+
+    return value;
+  }
+
+  private async writeRegister(
+    unitId: number,
+    register: number,
+    value: number,
+  ): Promise<void> {
+    this.client.setID(unitId);
+    await this.client.writeRegister(register, value);
+  }
+
+  private zoneRegister(zone: Zone, zone1: number, zone2: number): number {
+    return zone === 1 ? zone1 : zone2;
+  }
+
+  private zoneFlagRegister(zone: Zone): number {
+    return zone === 1 ? INPUTS.zone1Flags : INPUTS.zone2Flags;
+  }
+
+  private normalizeFanMode(mode: number): number {
+    return Number(mode) === 0 ? 0 : 1;
   }
 }
