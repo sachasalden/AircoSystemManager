@@ -1,0 +1,53 @@
+@startuml
+title Verbeterde situatie: flags + debounce sync
+
+actor "Gebruiker" as U
+participant "Polarbear A" as PA
+participant "Node.js sync-service" as NJS
+participant "RS-485 / Modbus bus" as BUS
+participant "Polarbear B" as PB
+
+== Gebruiker past waarde aan ==
+U -> PA : Draait knop\nsetpoint of fanMode
+PA -> PA : Zet wijzigingsflag
+
+== Node.js detecteert wijziging ==
+loop periodieke poll
+  NJS -> BUS : Lees snapshot + flags van Polarbear A
+  BUS -> PA : Read registers
+  PA --> BUS : Actuele waarden + flags
+  BUS --> NJS : Snapshot + flags
+
+  alt flag actief
+    NJS -> BUS : Lees pending waarde
+    BUS -> PA : Read pending register
+    PA --> BUS : Pending setpoint/fanMode
+    BUS --> NJS : Pending waarde
+
+    NJS -> BUS : Clear flag
+    BUS -> PA : Write flag-register
+    PA --> BUS : OK
+
+    NJS -> NJS : Sla op als candidate\nreset debounce
+  end
+end
+
+== Debounce klaar ==
+NJS -> NJS : Candidate is stabiel
+
+== Sync naar andere Polarbear ==
+NJS -> BUS : Schrijf waarde naar Polarbear B
+BUS -> PB : Write setpoint/fanMode/fanSpeed
+PB --> BUS : OK
+BUS --> NJS : OK
+
+NJS -> NJS : Onthoud eigen write\nvoorkom sync-loop
+
+note over NJS,PB
+Resultaat:
+wijzigingen worden via flags herkend,
+debounce voorkomt te veel writes,
+en Polarbear B wordt gecontroleerd bijgewerkt.
+end note
+
+@enduml
