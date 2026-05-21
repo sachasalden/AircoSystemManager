@@ -29,6 +29,7 @@ export default class WallpanelPoller {
   private readonly client: ModbusClient;
   private readonly service: PolarbearService;
   private connected = false;
+  private requestQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: PollerOptions) {
     this.unitIds = this.normalizeUnitIds(options.unitIds);
@@ -71,8 +72,14 @@ export default class WallpanelPoller {
     return this.run(unitId, () => this.service.getSetpoint(unitId, zone));
   }
 
-  async setSetpoint(unitId: number, zone: Zone, temperature: number): Promise<void> {
-    await this.run(unitId, () => this.service.setSetpoint(unitId, zone, temperature));
+  async setSetpoint(
+    unitId: number,
+    zone: Zone,
+    temperature: number,
+  ): Promise<void> {
+    await this.run(unitId, () =>
+      this.service.setSetpoint(unitId, zone, temperature),
+    );
   }
 
   async getFanSpeed(unitId: number, zone: Zone): Promise<number> {
@@ -92,10 +99,16 @@ export default class WallpanelPoller {
   }
 
   async getVirtualTemp(unitId: number, zone: Zone): Promise<number> {
-    return this.run(unitId, () => this.service.getVirtualTemperature(unitId, zone));
+    return this.run(unitId, () =>
+      this.service.getVirtualTemperature(unitId, zone),
+    );
   }
 
-  async setVirtualTemp(unitId: number, zone: Zone, temperature: number): Promise<void> {
+  async setVirtualTemp(
+    unitId: number,
+    zone: Zone,
+    temperature: number,
+  ): Promise<void> {
     await this.run(unitId, () =>
       this.service.setVirtualTemperature(unitId, zone, temperature),
     );
@@ -111,7 +124,9 @@ export default class WallpanelPoller {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    await this.run(unitId, () => this.service.setFlag(unitId, zone, type, currentFlags));
+    await this.run(unitId, () =>
+      this.service.setFlag(unitId, zone, type, currentFlags),
+    );
   }
 
   async clearFlag(
@@ -120,11 +135,15 @@ export default class WallpanelPoller {
     type: FlagType,
     currentFlags?: number,
   ): Promise<void> {
-    await this.run(unitId, () => this.service.clearFlag(unitId, zone, type, currentFlags));
+    await this.run(unitId, () =>
+      this.service.clearFlag(unitId, zone, type, currentFlags),
+    );
   }
 
   async getPendingSetpoint(unitId: number, zone: Zone): Promise<number> {
-    return this.run(unitId, () => this.service.getPendingSetpoint(unitId, zone));
+    return this.run(unitId, () =>
+      this.service.getPendingSetpoint(unitId, zone),
+    );
   }
 
   async getPendingFanMode(unitId: number, zone: Zone): Promise<number> {
@@ -135,7 +154,7 @@ export default class WallpanelPoller {
     this.assertUnitConfigured(unitId);
     await this.ensureConnected();
 
-    return task();
+    return this.enqueue(task);
   }
 
   private async ensureConnected(): Promise<void> {
@@ -154,8 +173,17 @@ export default class WallpanelPoller {
   }
 
   private normalizeUnitIds(unitIds: number[]): number[] {
-    return [...new Set(unitIds)]
-      .filter(Number.isFinite)
-      .sort((a, b) => a - b);
+    return [...new Set(unitIds)].filter(Number.isFinite).sort((a, b) => a - b);
+  }
+
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.requestQueue.then(task, task);
+
+    this.requestQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return run;
   }
 }

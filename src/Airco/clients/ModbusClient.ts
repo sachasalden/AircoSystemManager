@@ -10,7 +10,7 @@ export default class ModbusClient {
   private requestQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
-    private timeout = 10000,
+    timeout = 10000,
     private requestGapMs = 0,
     private reconnectDelayMs = 5000,
   ) {
