@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { SelectInput } from './components/ClimateFormControls';
 import SemiCircularTemperatureSlider from './components/SemiCircularTemperatureSlider';
-import type { AirconditionerDevice } from './model';
+import { GENERIC_AIRCO_DEFAULTS, type AirconditionerDevice } from './model';
 import type {
   AircoInsight,
   AircoInsightsProps,
@@ -48,27 +48,27 @@ function applyCommandOverrides(
         setpoint:
           overrides[
             commandOverrideKey(airco.aircoId, zoneState.zone, 'setpoint')
-            ] ?? zoneState.setpoint,
+          ] ?? zoneState.setpoint,
         fanSpeed:
           overrides[
             commandOverrideKey(airco.aircoId, zoneState.zone, 'fanSpeed')
-            ] ?? zoneState.fanSpeed,
+          ] ?? zoneState.fanSpeed,
         fanMode:
           overrides[
             commandOverrideKey(airco.aircoId, zoneState.zone, 'fanMode')
-            ] ?? zoneState.fanMode,
+          ] ?? zoneState.fanMode,
       })),
     })),
   };
 }
 
 export default function AircoInsights({
-                                        zones,
-                                        selectedZoneId,
-                                        selectedRoomId,
-                                        setSelectedZoneId,
-                                        setSelectedRoomId,
-                                      }: AircoInsightsProps) {
+  zones,
+  selectedZoneId,
+  selectedRoomId,
+  setSelectedZoneId,
+  setSelectedRoomId,
+}: AircoInsightsProps) {
   const [data, setData] = useState<AircoInsightsResponse | null>(null);
   const [selectedAircoId, setSelectedAircoId] = useState('');
   const [selectedControlZone, setSelectedControlZone] = useState<1 | 2>(1);
@@ -98,10 +98,24 @@ export default function AircoInsights({
     (zone) => zone.zone === selectedControlZone,
   );
 
-  const minSetpoint = selectedAirco?.minSetTemperature ?? 16;
-  const maxSetpoint = selectedAirco?.maxSetTemperature ?? 30;
-  const minFanSpeed = selectedAirco?.minFanspeed ?? 1;
-  const maxFanSpeed = selectedAirco?.maxFanspeed ?? 4;
+  const minSetpoint =
+    selectedAirco?.minSetTemperature ??
+    GENERIC_AIRCO_DEFAULTS.minSetTemperature;
+  const maxSetpoint =
+    selectedAirco?.maxSetTemperature ??
+    GENERIC_AIRCO_DEFAULTS.maxSetTemperature;
+  const minFanSpeed =
+    selectedAirco?.minFanspeed ?? GENERIC_AIRCO_DEFAULTS.minFanspeed;
+  const maxFanSpeed =
+    selectedAirco?.maxFanspeed ?? GENERIC_AIRCO_DEFAULTS.maxFanspeed;
+  const minFanMode =
+    selectedAirco?.minFanMode ?? GENERIC_AIRCO_DEFAULTS.minFanMode;
+  const maxFanMode =
+    selectedAirco?.maxFanMode ?? GENERIC_AIRCO_DEFAULTS.maxFanMode;
+  const fanModes = Array.from(
+    { length: Math.max(0, maxFanMode - minFanMode + 1) },
+    (_, index) => minFanMode + index,
+  );
 
   const activeSetpoint =
     draftSetpoint ??
@@ -146,17 +160,17 @@ export default function AircoInsights({
         airco.aircoId !== aircoId
           ? airco
           : {
-            ...airco,
-            zones: airco.zones.map((zoneState) =>
-              zoneState.zone !== zone
-                ? zoneState
-                : {
-                  ...zoneState,
-                  status: 'ok',
-                  [property]: value,
-                },
-            ),
-          },
+              ...airco,
+              zones: airco.zones.map((zoneState) =>
+                zoneState.zone !== zone
+                  ? zoneState
+                  : {
+                      ...zoneState,
+                      status: 'ok',
+                      [property]: value,
+                    },
+              ),
+            },
       ),
     };
   }
@@ -456,25 +470,20 @@ export default function AircoInsights({
               </div>
 
               <div className="fan-mode-grid">
-                {[
-                  { label: 'Off', value: 0 },
-                  { label: 'Auto', value: 1 },
-                ].map((mode) => (
+                {fanModes.map((value) => (
                   <button
-                    key={mode.value}
+                    key={value}
                     className={`mode-card ${
-                      selectedZoneInsight?.fanMode === mode.value
-                        ? 'active'
-                        : ''
+                      selectedZoneInsight?.fanMode === value ? 'active' : ''
                     }`}
                     type="button"
                     disabled={saving}
                     onClick={() =>
-                      void sendCommand(selectedAirco, 'fanMode', mode.value)
+                      void sendCommand(selectedAirco, 'fanMode', value)
                     }
                   >
-                    <span>{mode.label}</span>
-                    <strong>{mode.value}</strong>
+                    <span>{formatFanModeLabel(value)}</span>
+                    <strong>{value}</strong>
                   </button>
                 ))}
               </div>
@@ -486,10 +495,16 @@ export default function AircoInsights({
   );
 }
 
+function formatFanModeLabel(value: number): string {
+  if (value === 0) return 'Off';
+  if (value === 1) return 'Auto';
+  return `Mode ${value}`;
+}
+
 function AircoStatusPanel({
-                            insight,
-                            zoneState,
-                          }: {
+  insight,
+  zoneState,
+}: {
   insight?: AircoInsight;
   zoneState?: AircoInsightZone;
 }) {

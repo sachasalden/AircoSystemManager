@@ -145,10 +145,10 @@ export default function WallpanelCard({
 
         {!isEditing ? (
           <>
-            <div className="big-temp">Wallpanel</div>
+            <div className="big-temp">Moxa</div>
             <div className="current-row">
               <span>🔌</span>
-              <span>Terminals: {terminalsText}</span>
+              <span>Wallpanels: {terminalsText}</span>
             </div>
 
             <div className="stats-grid">
@@ -185,7 +185,6 @@ export default function WallpanelCard({
                   onChange={(value) => setEditType(value as WallpanelVersion)}
                 >
                   <option value="polarbear-v1">polarbear-v1</option>
-                  <option value="polarbear-v2">polarbear-v2</option>
                   <option value="polarbear-v3">polarbear-v3</option>
                 </SelectInput>
               </Field>

@@ -42,14 +42,20 @@ export function TextInput({
 type NumberInputProps = {
   value: number | '';
   onChange: (value: number | '') => void;
+  placeholder?: string;
 };
 
-export function NumberInput({ value, onChange }: NumberInputProps) {
+export function NumberInput({
+  value,
+  onChange,
+  placeholder,
+}: NumberInputProps) {
   return (
     <input
       className="text-input"
       type="number"
       value={value}
+      placeholder={placeholder}
       onChange={(e) =>
         onChange(e.target.value === '' ? '' : Number(e.target.value))
       }

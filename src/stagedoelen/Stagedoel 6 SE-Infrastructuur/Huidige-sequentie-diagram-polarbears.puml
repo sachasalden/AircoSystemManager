@@ -3,7 +3,7 @@ title Verbeterde situatie: flags + debounce sync
 
 actor "Gebruiker" as U
 participant "Polarbear A" as PA
-participant "Node.js sync-service" as NJS
+participant "Sync-service" as NJS
 participant "RS-485 / Modbus bus" as BUS
 participant "Polarbear B" as PB
 
@@ -11,7 +11,7 @@ participant "Polarbear B" as PB
 U -> PA : Draait knop\nsetpoint of fanMode
 PA -> PA : Zet wijzigingsflag
 
-== Node.js detecteert wijziging ==
+== Sync-service detecteert wijziging ==
 loop periodieke poll
   NJS -> BUS : Lees snapshot + flags van Polarbear A
   BUS -> PA : Read registers
@@ -43,11 +43,6 @@ BUS --> NJS : OK
 
 NJS -> NJS : Onthoud eigen write\nvoorkom sync-loop
 
-note over NJS,PB
-Resultaat:
-wijzigingen worden via flags herkend,
-debounce voorkomt te veel writes,
-en Polarbear B wordt gecontroleerd bijgewerkt.
-end note
+
 
 @enduml

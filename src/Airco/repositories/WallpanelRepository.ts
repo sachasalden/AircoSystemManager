@@ -39,6 +39,8 @@ export type AirconditionerDevice = {
   currentFanspeed: number;
   minFanspeed: number;
   maxFanspeed: number;
+  minFanMode: number;
+  maxFanMode: number;
   data: AirconditionerData;
 };
 
@@ -60,12 +62,38 @@ const DEFAULT_PANEL_PORT = 4001;
 
 const DEFAULT_AIRCO_DEVICE_TYPE = 'FC-500PC/FC-1100PC';
 const DEFAULT_AIRCO_ADAPTER_TYPE = 'HeinAndHopmanIpSystem';
-const DEFAULT_AIRCO_MIN_TEMPERATURE = 16;
-const DEFAULT_AIRCO_MAX_TEMPERATURE = 30;
-const DEFAULT_AIRCO_MIN_FANSPEED = 0;
-const DEFAULT_AIRCO_MAX_FANSPEED = 4;
 const DEFAULT_AIRCO_CURRENT_TEMPERATURE = -1;
 const DEFAULT_AIRCO_CURRENT_FANSPEED = -1;
+
+type AircoDefaults = {
+  minTemperature: number;
+  maxTemperature: number;
+  setTemperature: number;
+  minFanspeed: number;
+  maxFanspeed: number;
+  minFanMode: number;
+  maxFanMode: number;
+};
+
+const GENERIC_AIRCO_DEFAULTS: AircoDefaults = {
+  minTemperature: 16,
+  maxTemperature: 30,
+  setTemperature: 16,
+  minFanspeed: 0,
+  maxFanspeed: 4,
+  minFanMode: 0,
+  maxFanMode: 1,
+};
+
+const FC500_PC_AIRCO_DEFAULTS: AircoDefaults = {
+  minTemperature: 9,
+  maxTemperature: 29,
+  setTemperature: 9,
+  minFanspeed: 1,
+  maxFanspeed: 6,
+  minFanMode: 0,
+  maxFanMode: 1,
+};
 
 export class AircopanelRepository {
   private client: MongoClient;
@@ -94,6 +122,23 @@ export class AircopanelRepository {
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
+  private getAircoDefaults(deviceType?: string): AircoDefaults {
+    const normalizedType = String(deviceType ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_]+/g, '-');
+
+    if (
+      normalizedType === 'fc-500pc/fc-1100pc' ||
+      normalizedType === 'fc500-pc' ||
+      normalizedType === 'dc500-pc'
+    ) {
+      return FC500_PC_AIRCO_DEFAULTS;
+    }
+
+    return GENERIC_AIRCO_DEFAULTS;
+  }
+
   private normalizePanelDevice(device: Partial<PanelDevice>): PanelDevice {
     return {
       id: device.id || uuidv4(),
@@ -113,13 +158,15 @@ export class AircopanelRepository {
   private normalizeAirconditionerDevice(
     device: Partial<AirconditionerDevice>,
   ): AirconditionerDevice {
+    const deviceType = device.deviceType ?? DEFAULT_AIRCO_DEVICE_TYPE;
+    const defaults = this.getAircoDefaults(deviceType);
     const minTemperature = this.toNumber(
       device.minTemperature,
-      DEFAULT_AIRCO_MIN_TEMPERATURE,
+      defaults.minTemperature,
     );
     const maxTemperature = this.toNumber(
       device.maxTemperature,
-      DEFAULT_AIRCO_MAX_TEMPERATURE,
+      defaults.maxTemperature,
     );
 
     const minSetTemperature = this.toNumber(
@@ -131,18 +178,14 @@ export class AircopanelRepository {
       maxTemperature,
     );
 
-    const minFanspeed = this.toNumber(
-      device.minFanspeed,
-      DEFAULT_AIRCO_MIN_FANSPEED,
-    );
-    const maxFanspeed = this.toNumber(
-      device.maxFanspeed,
-      DEFAULT_AIRCO_MAX_FANSPEED,
-    );
+    const minFanspeed = this.toNumber(device.minFanspeed, defaults.minFanspeed);
+    const maxFanspeed = this.toNumber(device.maxFanspeed, defaults.maxFanspeed);
+    const minFanMode = this.toNumber(device.minFanMode, defaults.minFanMode);
+    const maxFanMode = this.toNumber(device.maxFanMode, defaults.maxFanMode);
 
     let setTemperature = this.toNumber(
       device.setTemperature,
-      minSetTemperature,
+      defaults.setTemperature,
     );
 
     if (setTemperature < minSetTemperature) {
@@ -156,7 +199,7 @@ export class AircopanelRepository {
     return {
       id: device.id || uuidv4(),
       name: device.name ?? '',
-      deviceType: device.deviceType ?? DEFAULT_AIRCO_DEVICE_TYPE,
+      deviceType,
       minTemperature,
       maxTemperature,
       minSetTemperature,
@@ -172,6 +215,8 @@ export class AircopanelRepository {
       ),
       minFanspeed,
       maxFanspeed,
+      minFanMode,
+      maxFanMode,
       data: {
         ...(device.data ?? {}),
         deviceId: device.data?.deviceId || uuidv4(),

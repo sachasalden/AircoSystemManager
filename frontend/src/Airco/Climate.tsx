@@ -11,6 +11,7 @@ import EnvironmentDeviceForm from './components/EnvironmentDeviceForm';
 import WallpanelCard from './components/WallpanelCard';
 import WallpanelForm from './components/WallpanelForm';
 import {
+  getAircoDeviceDefaults,
   normalizeAirconditionerDevice,
   normalizeEnvironmentDevice,
   normalizeWallpanelDevice,
@@ -48,11 +49,12 @@ export default function Climate() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [zonesRes, environmentDevicesRes, adapterTypesRes] = await Promise.all([
-          axios.get('http://localhost:3000/devices'),
-          axios.get('http://localhost:3000/environment-devices'),
-          axios.get('http://localhost:3000/airco-adapter-types'),
-        ]);
+        const [zonesRes, environmentDevicesRes, adapterTypesRes] =
+          await Promise.all([
+            axios.get('http://localhost:3000/devices'),
+            axios.get('http://localhost:3000/environment-devices'),
+            axios.get('http://localhost:3000/airco-adapter-types'),
+          ]);
 
         const rawEnvironmentDevices = Array.isArray(environmentDevicesRes.data)
           ? environmentDevicesRes.data
@@ -82,7 +84,9 @@ export default function Climate() {
   }, []);
 
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId);
-  const selectedRoom = selectedZone?.rooms.find((room) => room.id === selectedRoomId);
+  const selectedRoom = selectedZone?.rooms.find(
+    (room) => room.id === selectedRoomId,
+  );
   const compatibleEnvironmentDevices = environmentDevices.filter((device) =>
     supportedEnvironmentDeviceTypes.includes(device.type),
   );
@@ -100,13 +104,16 @@ export default function Climate() {
     }
 
     try {
-      const res = await axios.post('http://localhost:3000/environment-devices', {
-        name: value.name,
-        type: value.type,
-        ip: value.ip,
-        port: value.port,
-        bidirectional: value.bidirectional,
-      });
+      const res = await axios.post(
+        'http://localhost:3000/environment-devices',
+        {
+          name: value.name,
+          type: value.type,
+          ip: value.ip,
+          port: value.port,
+          bidirectional: value.bidirectional,
+        },
+      );
 
       const normalizedDevice = normalizeEnvironmentDevice(res.data);
 
@@ -125,7 +132,9 @@ export default function Climate() {
     );
 
     if (isUsed) {
-      window.alert('Dit system device wordt nog gebruikt door een airconditioner.');
+      window.alert(
+        'Dit system device wordt nog gebruikt door een airconditioner.',
+      );
       return;
     }
 
@@ -221,6 +230,8 @@ export default function Climate() {
     maxSetTemperature: number | '';
     minFanspeed: number | '';
     maxFanspeed: number | '';
+    minFanMode: number | '';
+    maxFanMode: number | '';
   }) {
     if (!selectedZoneId || !selectedRoomId) {
       window.alert('Select a zone and room first.');
@@ -232,9 +243,13 @@ export default function Climate() {
     );
 
     if (!selectedEnvDevice || !value.deviceType || !value.terminalId) {
-      window.alert('Environment device, device model en terminal id zijn verplicht.');
+      window.alert(
+        'Environment device, device model en terminal id zijn verplicht.',
+      );
       return;
     }
+
+    const defaults = getAircoDeviceDefaults(value.deviceType);
 
     const device = {
       zoneId: selectedZoneId,
@@ -254,11 +269,19 @@ export default function Climate() {
           ? undefined
           : Number(value.maxSetTemperature),
       setTemperature:
-        value.minSetTemperature === '' ? 16 : Number(value.minSetTemperature),
+        value.minSetTemperature === ''
+          ? defaults.setTemperature
+          : Number(value.minSetTemperature),
       currentTemperature: -1,
       currentFanspeed: -1,
-      minFanspeed: value.minFanspeed === '' ? undefined : Number(value.minFanspeed),
-      maxFanspeed: value.maxFanspeed === '' ? undefined : Number(value.maxFanspeed),
+      minFanspeed:
+        value.minFanspeed === '' ? undefined : Number(value.minFanspeed),
+      maxFanspeed:
+        value.maxFanspeed === '' ? undefined : Number(value.maxFanspeed),
+      minFanMode:
+        value.minFanMode === '' ? undefined : Number(value.minFanMode),
+      maxFanMode:
+        value.maxFanMode === '' ? undefined : Number(value.maxFanMode),
       data: {
         deviceId: selectedEnvDevice.id,
         type: selectedEnvDevice.type,
@@ -271,7 +294,10 @@ export default function Climate() {
     };
 
     try {
-      const res = await axios.post('http://localhost:3000/airco-devices', device);
+      const res = await axios.post(
+        'http://localhost:3000/airco-devices',
+        device,
+      );
       const normalizedAirco = normalizeAirconditionerDevice(res.data);
 
       setZones((prevZones) =>
@@ -285,7 +311,10 @@ export default function Climate() {
                     ? room
                     : {
                         ...room,
-                        airconditioners: [...room.airconditioners, normalizedAirco],
+                        airconditioners: [
+                          ...room.airconditioners,
+                          normalizedAirco,
+                        ],
                       },
                 ),
               },
@@ -416,7 +445,9 @@ export default function Climate() {
     if (!aircoToDelete || !selectedZoneId || !selectedRoomId) return;
 
     try {
-      await axios.delete(`http://localhost:3000/airco-devices/${aircoToDelete}`);
+      await axios.delete(
+        `http://localhost:3000/airco-devices/${aircoToDelete}`,
+      );
 
       setZones((prevZones) =>
         prevZones.map((zone) =>
@@ -492,7 +523,9 @@ export default function Climate() {
           <button
             key={zone.id}
             className={`menu-item ${
-              activeView === 'zones' && selectedZoneId === zone.id ? 'active' : ''
+              activeView === 'zones' && selectedZoneId === zone.id
+                ? 'active'
+                : ''
             }`}
             onClick={() => {
               setActiveView('zones');
@@ -653,7 +686,9 @@ export default function Climate() {
 
                 {showAircoForm && (
                   <main className="climate-panel" style={{ marginBottom: 24 }}>
-                    <h5 className="climate-title">Airconditioning - Add device</h5>
+                    <h5 className="climate-title">
+                      Airconditioning - Add device
+                    </h5>
 
                     <AirconditionerForm
                       environmentDevices={environmentDevices}
@@ -671,7 +706,9 @@ export default function Climate() {
                 <div className="cards-grid">
                   {selectedRoom.airconditioners.length === 0 ? (
                     <div className="climate-panel">
-                      <div className="empty">No airconditioners in this room</div>
+                      <div className="empty">
+                        No airconditioners in this room
+                      </div>
                     </div>
                   ) : (
                     selectedRoom.airconditioners.map((airco) => (
@@ -701,7 +738,6 @@ export default function Climate() {
                 </div>
               </div>
             )}
-
           </>
         )}
       </div>

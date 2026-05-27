@@ -1,7 +1,4 @@
-export type WallpanelVersion =
-  | 'polarbear-v1'
-  | 'polarbear-v2'
-  | 'polarbear-v3';
+export type WallpanelVersion = 'polarbear-v1' | 'polarbear-v2' | 'polarbear-v3';
 
 export type EnvironmentDevice = {
   id: string;
@@ -38,6 +35,8 @@ export type AirconditionerDevice = {
   currentFanspeed: number;
   minFanspeed: number;
   maxFanspeed: number;
+  minFanMode: number;
+  maxFanMode: number;
   data: {
     deviceId: string;
     type: string;
@@ -92,6 +91,65 @@ export const AIRCO_DEVICE_MODELS = [
 
 export const AIRCO_ADAPTER_TYPES = ['HeinAndHopmanIpSystem'] as const;
 
+export type AircoDeviceDefaults = {
+  minTemperature: number;
+  maxTemperature: number;
+  minSetTemperature: number;
+  maxSetTemperature: number;
+  setTemperature: number;
+  minFanspeed: number;
+  maxFanspeed: number;
+  minFanMode: number;
+  maxFanMode: number;
+};
+
+export const GENERIC_AIRCO_DEFAULTS: AircoDeviceDefaults = {
+  minTemperature: 16,
+  maxTemperature: 30,
+  minSetTemperature: 16,
+  maxSetTemperature: 30,
+  setTemperature: 16,
+  minFanspeed: 0,
+  maxFanspeed: 4,
+  minFanMode: 0,
+  maxFanMode: 1,
+};
+
+export const FC500_PC_AIRCO_DEFAULTS: AircoDeviceDefaults = {
+  minTemperature: 9,
+  maxTemperature: 29,
+  minSetTemperature: 9,
+  maxSetTemperature: 29,
+  setTemperature: 9,
+  minFanspeed: 1,
+  maxFanspeed: 6,
+  minFanMode: 0,
+  maxFanMode: 1,
+};
+
+function normalizeDeviceType(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+}
+
+export function getAircoDeviceDefaults(
+  deviceType?: string,
+): AircoDeviceDefaults {
+  const normalizedType = normalizeDeviceType(deviceType);
+
+  if (
+    normalizedType === 'fc-500pc/fc-1100pc' ||
+    normalizedType === 'fc500-pc' ||
+    normalizedType === 'dc500-pc'
+  ) {
+    return FC500_PC_AIRCO_DEFAULTS;
+  }
+
+  return GENERIC_AIRCO_DEFAULTS;
+}
+
 function toNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -144,14 +202,27 @@ export function normalizeWallpanelDevice(
 export function normalizeAirconditionerDevice(
   device?: ApiAirconditionerDevice,
 ): AirconditionerDevice {
-  const minTemperature = toNumber(device?.minTemperature, 16);
-  const maxTemperature = toNumber(device?.maxTemperature, 30);
+  const deviceType = device?.deviceType ?? AIRCO_DEVICE_MODELS[0];
+  const defaults = getAircoDeviceDefaults(deviceType);
+  const minTemperature = toNumber(
+    device?.minTemperature,
+    defaults.minTemperature,
+  );
+  const maxTemperature = toNumber(
+    device?.maxTemperature,
+    defaults.maxTemperature,
+  );
   const minSetTemperature = toNumber(device?.minSetTemperature, minTemperature);
   const maxSetTemperature = toNumber(device?.maxSetTemperature, maxTemperature);
-  const minFanspeed = toNumber(device?.minFanspeed, 0);
-  const maxFanspeed = toNumber(device?.maxFanspeed, 4);
+  const minFanspeed = toNumber(device?.minFanspeed, defaults.minFanspeed);
+  const maxFanspeed = toNumber(device?.maxFanspeed, defaults.maxFanspeed);
+  const minFanMode = toNumber(device?.minFanMode, defaults.minFanMode);
+  const maxFanMode = toNumber(device?.maxFanMode, defaults.maxFanMode);
 
-  let setTemperature = toNumber(device?.setTemperature, minSetTemperature);
+  let setTemperature = toNumber(
+    device?.setTemperature,
+    defaults.setTemperature,
+  );
 
   if (setTemperature < minSetTemperature) {
     setTemperature = minSetTemperature;
@@ -164,7 +235,7 @@ export function normalizeAirconditionerDevice(
   return {
     id: String(device?.id ?? ''),
     name: device?.name ?? '',
-    deviceType: device?.deviceType ?? AIRCO_DEVICE_MODELS[0],
+    deviceType,
     minTemperature,
     maxTemperature,
     minSetTemperature,
@@ -174,6 +245,8 @@ export function normalizeAirconditionerDevice(
     currentFanspeed: toNumber(device?.currentFanspeed, -1),
     minFanspeed,
     maxFanspeed,
+    minFanMode,
+    maxFanMode,
     data: {
       ...(device?.data ?? {}),
       deviceId: String(device?.data?.deviceId ?? ''),
@@ -193,7 +266,9 @@ function normalizeRoom(room?: ApiRoom): Room {
       ? room.aircopanels.map((panel) => normalizeWallpanelDevice(panel))
       : [],
     airconditioners: Array.isArray(room?.airconditioners)
-      ? room.airconditioners.map((airco) => normalizeAirconditionerDevice(airco))
+      ? room.airconditioners.map((airco) =>
+          normalizeAirconditionerDevice(airco),
+        )
       : [],
   };
 }

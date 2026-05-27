@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AIRCO_DEVICE_MODELS } from '../model';
+import { AIRCO_DEVICE_MODELS, getAircoDeviceDefaults } from '../model';
 import type { EnvironmentDevice } from '../model';
 import {
   Field,
@@ -24,6 +24,8 @@ type AirconditionerFormValue = {
   maxSetTemperature: number | '';
   minFanspeed: number | '';
   maxFanspeed: number | '';
+  minFanMode: number | '';
+  maxFanMode: number | '';
 };
 
 type AirconditionerFormProps = {
@@ -49,19 +51,19 @@ export default function AirconditionerForm({
   const [deviceType, setDeviceType] = useState(
     initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0],
   );
-  const [selectedEnvironmentDeviceId, setSelectedEnvironmentDeviceId] = useState(
-    initialValue?.selectedEnvironmentDeviceId ??
-      environmentDevices[0]?.id ??
-      '',
-  );
+  const defaults = getAircoDeviceDefaults(deviceType);
+  const [selectedEnvironmentDeviceId, setSelectedEnvironmentDeviceId] =
+    useState(
+      initialValue?.selectedEnvironmentDeviceId ??
+        environmentDevices[0]?.id ??
+        '',
+    );
   const [terminalId, setTerminalId] = useState(initialValue?.terminalId ?? '');
   const [roomTemparatureAddress, setRoomTemparatureAddress] = useState(
     initialValue?.roomTemparatureAddress ?? '',
   );
-  const [
-    roomTemparatureSetPointAddress,
-    setRoomTemparatureSetPointAddress,
-  ] = useState(initialValue?.roomTemparatureSetPointAddress ?? '');
+  const [roomTemparatureSetPointAddress, setRoomTemparatureSetPointAddress] =
+    useState(initialValue?.roomTemparatureSetPointAddress ?? '');
   const [fanspeedAddress, setFanspeedAddress] = useState(
     initialValue?.fanspeedAddress ?? '',
   );
@@ -69,26 +71,32 @@ export default function AirconditionerForm({
     initialValue?.fanspeedSetPointAddress ?? '',
   );
   const [minTemperature, setMinTemperature] = useState<number | ''>(
-    initialValue?.minTemperature ?? 16,
+    initialValue?.minTemperature ?? defaults.minTemperature,
   );
   const [maxTemperature, setMaxTemperature] = useState<number | ''>(
-    initialValue?.maxTemperature ?? 30,
+    initialValue?.maxTemperature ?? defaults.maxTemperature,
   );
   const [minSetTemperature, setMinSetTemperature] = useState<number | ''>(
-    initialValue?.minSetTemperature ?? 16,
+    initialValue?.minSetTemperature ?? defaults.minSetTemperature,
   );
   const [maxSetTemperature, setMaxSetTemperature] = useState<number | ''>(
-    initialValue?.maxSetTemperature ?? 30,
+    initialValue?.maxSetTemperature ?? defaults.maxSetTemperature,
   );
   const [minFanspeed, setMinFanspeed] = useState<number | ''>(
-    initialValue?.minFanspeed ?? 0,
+    initialValue?.minFanspeed ?? defaults.minFanspeed,
   );
   const [maxFanspeed, setMaxFanspeed] = useState<number | ''>(
-    initialValue?.maxFanspeed ?? 4,
+    initialValue?.maxFanspeed ?? defaults.maxFanspeed,
+  );
+  const [minFanMode, setMinFanMode] = useState<number | ''>(
+    initialValue?.minFanMode ?? defaults.minFanMode,
+  );
+  const [maxFanMode, setMaxFanMode] = useState<number | ''>(
+    initialValue?.maxFanMode ?? defaults.maxFanMode,
   );
 
-  const compatibleEnvironmentDevices = environmentDevices.filter(
-    (env) => supportedEnvironmentDeviceTypes.includes(env.type),
+  const compatibleEnvironmentDevices = environmentDevices.filter((env) =>
+    supportedEnvironmentDeviceTypes.includes(env.type),
   );
   const selectedEnvironmentDevice = compatibleEnvironmentDevices.find(
     (env) => env.id === selectedEnvironmentDeviceId,
@@ -98,11 +106,13 @@ export default function AirconditionerForm({
     selectedEnvironmentDevice?.type === 'HeinEnHopmanGooiland';
 
   useEffect(() => {
+    const nextDeviceType = initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0];
+    const nextDefaults = getAircoDeviceDefaults(nextDeviceType);
+
     setName(initialValue?.name ?? '');
-    setDeviceType(initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0]);
+    setDeviceType(nextDeviceType);
     setSelectedEnvironmentDeviceId(
-      initialValue?.selectedEnvironmentDeviceId ??
-        defaultEnvironmentDeviceId,
+      initialValue?.selectedEnvironmentDeviceId ?? defaultEnvironmentDeviceId,
     );
     setTerminalId(initialValue?.terminalId ?? '');
     setRoomTemparatureAddress(initialValue?.roomTemparatureAddress ?? '');
@@ -111,20 +121,32 @@ export default function AirconditionerForm({
     );
     setFanspeedAddress(initialValue?.fanspeedAddress ?? '');
     setFanspeedSetPointAddress(initialValue?.fanspeedSetPointAddress ?? '');
-    setMinTemperature(initialValue?.minTemperature ?? 16);
-    setMaxTemperature(initialValue?.maxTemperature ?? 30);
-    setMinSetTemperature(initialValue?.minSetTemperature ?? 16);
-    setMaxSetTemperature(initialValue?.maxSetTemperature ?? 30);
-    setMinFanspeed(initialValue?.minFanspeed ?? 0);
-    setMaxFanspeed(initialValue?.maxFanspeed ?? 4);
+    setMinTemperature(
+      initialValue?.minTemperature ?? nextDefaults.minTemperature,
+    );
+    setMaxTemperature(
+      initialValue?.maxTemperature ?? nextDefaults.maxTemperature,
+    );
+    setMinSetTemperature(
+      initialValue?.minSetTemperature ?? nextDefaults.minSetTemperature,
+    );
+    setMaxSetTemperature(
+      initialValue?.maxSetTemperature ?? nextDefaults.maxSetTemperature,
+    );
+    setMinFanspeed(initialValue?.minFanspeed ?? nextDefaults.minFanspeed);
+    setMaxFanspeed(initialValue?.maxFanspeed ?? nextDefaults.maxFanspeed);
+    setMinFanMode(initialValue?.minFanMode ?? nextDefaults.minFanMode);
+    setMaxFanMode(initialValue?.maxFanMode ?? nextDefaults.maxFanMode);
   }, [defaultEnvironmentDeviceId, initialValue]);
 
   function resetForm() {
+    const nextDeviceType = initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0];
+    const nextDefaults = getAircoDeviceDefaults(nextDeviceType);
+
     setName(initialValue?.name ?? '');
-    setDeviceType(initialValue?.deviceType ?? AIRCO_DEVICE_MODELS[0]);
+    setDeviceType(nextDeviceType);
     setSelectedEnvironmentDeviceId(
-      initialValue?.selectedEnvironmentDeviceId ??
-        defaultEnvironmentDeviceId,
+      initialValue?.selectedEnvironmentDeviceId ?? defaultEnvironmentDeviceId,
     );
     setTerminalId(initialValue?.terminalId ?? '');
     setRoomTemparatureAddress(initialValue?.roomTemparatureAddress ?? '');
@@ -133,12 +155,22 @@ export default function AirconditionerForm({
     );
     setFanspeedAddress(initialValue?.fanspeedAddress ?? '');
     setFanspeedSetPointAddress(initialValue?.fanspeedSetPointAddress ?? '');
-    setMinTemperature(initialValue?.minTemperature ?? 16);
-    setMaxTemperature(initialValue?.maxTemperature ?? 30);
-    setMinSetTemperature(initialValue?.minSetTemperature ?? 16);
-    setMaxSetTemperature(initialValue?.maxSetTemperature ?? 30);
-    setMinFanspeed(initialValue?.minFanspeed ?? 0);
-    setMaxFanspeed(initialValue?.maxFanspeed ?? 4);
+    setMinTemperature(
+      initialValue?.minTemperature ?? nextDefaults.minTemperature,
+    );
+    setMaxTemperature(
+      initialValue?.maxTemperature ?? nextDefaults.maxTemperature,
+    );
+    setMinSetTemperature(
+      initialValue?.minSetTemperature ?? nextDefaults.minSetTemperature,
+    );
+    setMaxSetTemperature(
+      initialValue?.maxSetTemperature ?? nextDefaults.maxSetTemperature,
+    );
+    setMinFanspeed(initialValue?.minFanspeed ?? nextDefaults.minFanspeed);
+    setMaxFanspeed(initialValue?.maxFanspeed ?? nextDefaults.maxFanspeed);
+    setMinFanMode(initialValue?.minFanMode ?? nextDefaults.minFanMode);
+    setMaxFanMode(initialValue?.maxFanMode ?? nextDefaults.maxFanMode);
   }
 
   return (
@@ -212,27 +244,67 @@ export default function AirconditionerForm({
       )}
 
       <Field label="Min temperature">
-        <NumberInput value={minTemperature} onChange={setMinTemperature} />
+        <NumberInput
+          value={minTemperature}
+          onChange={setMinTemperature}
+          placeholder={String(defaults.minTemperature)}
+        />
       </Field>
 
       <Field label="Max temperature">
-        <NumberInput value={maxTemperature} onChange={setMaxTemperature} />
+        <NumberInput
+          value={maxTemperature}
+          onChange={setMaxTemperature}
+          placeholder={String(defaults.maxTemperature)}
+        />
       </Field>
 
       <Field label="Min set temp">
-        <NumberInput value={minSetTemperature} onChange={setMinSetTemperature} />
+        <NumberInput
+          value={minSetTemperature}
+          onChange={setMinSetTemperature}
+          placeholder={String(defaults.minSetTemperature)}
+        />
       </Field>
 
       <Field label="Max set temp">
-        <NumberInput value={maxSetTemperature} onChange={setMaxSetTemperature} />
+        <NumberInput
+          value={maxSetTemperature}
+          onChange={setMaxSetTemperature}
+          placeholder={String(defaults.maxSetTemperature)}
+        />
       </Field>
 
       <Field label="Min fan speed">
-        <NumberInput value={minFanspeed} onChange={setMinFanspeed} />
+        <NumberInput
+          value={minFanspeed}
+          onChange={setMinFanspeed}
+          placeholder={String(defaults.minFanspeed)}
+        />
       </Field>
 
       <Field label="Max fan speed">
-        <NumberInput value={maxFanspeed} onChange={setMaxFanspeed} />
+        <NumberInput
+          value={maxFanspeed}
+          onChange={setMaxFanspeed}
+          placeholder={String(defaults.maxFanspeed)}
+        />
+      </Field>
+
+      <Field label="Min fan mode">
+        <NumberInput
+          value={minFanMode}
+          onChange={setMinFanMode}
+          placeholder={String(defaults.minFanMode)}
+        />
+      </Field>
+
+      <Field label="Max fan mode">
+        <NumberInput
+          value={maxFanMode}
+          onChange={setMaxFanMode}
+          placeholder={String(defaults.maxFanMode)}
+        />
       </Field>
 
       <FormActions>
@@ -253,6 +325,8 @@ export default function AirconditionerForm({
               maxSetTemperature,
               minFanspeed,
               maxFanspeed,
+              minFanMode,
+              maxFanMode,
             })
           }
           className="btn add-btn"
