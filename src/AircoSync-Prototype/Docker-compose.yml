@@ -1,0 +1,17 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: wallpanel-sync-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: wallpanel
+      MONGO_INITDB_ROOT_PASSWORD: wallpanel
+      MONGO_INITDB_DATABASE: wallpanel_sync
+    volumes:
+      - mongo-data:/data/db
+      - ./docker/mongo/init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  mongo-data:
