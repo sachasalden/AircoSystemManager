@@ -277,6 +277,18 @@ const REGISTERS = {
   zone2Setpoint: 701,
   zone2FanMode: 706,
   zone2FanSpeed: 707,
+  baudRate: 9002,
+};
+
+const COILS = {
+  reboot: 9991,
+};
+
+const BAUDRATE_VALUES: Record<number, number> = {
+  9600: 2,
+  19200: 3,
+  57600: 4,
+  115200: 5,
 };
 
 const INPUTS = {
@@ -789,6 +801,15 @@ class ModbusClient {
     });
   }
 
+  async writeCoil(coil: number, value: boolean): Promise<void> {
+    await this.enqueue(async () => {
+      await this.waitForGap();
+
+      await this.client.writeCoil(coil, value);
+      this.lastRequestAt = Date.now();
+    });
+  }
+
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.queue.then(task, task);
 
@@ -929,6 +950,46 @@ class Polarbear {
     log(
       `virtualTemp geschreven ${target.name} unit=${target.unitId} zone=${target.zone} register=${target.register} value=${rounded} encoded=${encoded}`,
     );
+  }
+
+  async setBaudrate(unitIds: number[], baudrate: number): Promise<void> {
+    const encodedValue = BAUDRATE_VALUES[baudrate];
+
+    if (encodedValue === undefined) {
+      throw new Error(
+        `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(
+          BAUDRATE_VALUES,
+        ).join(", ")}`,
+      );
+    }
+
+    log(`polarbear baudrate instellen ${baudrate} encoded=${encodedValue}`);
+
+    for (const unitId of unitIds) {
+      log(`polarbear baudrate request unit=${unitId}`);
+      this.client.setId(unitId);
+      await this.client.write(REGISTERS.baudRate, encodedValue);
+      log(`polarbear baudrate gezet unit=${unitId} value=${baudrate}`);
+      await sleep(500);
+    }
+  }
+
+  async reboot(unitIds: number[]): Promise<void> {
+    for (const unitId of unitIds) {
+      log(`polarbear reboot request unit=${unitId}`);
+      this.client.setId(unitId);
+
+      try {
+        await this.client.writeCoil(COILS.reboot, true);
+      } catch (error) {
+        log(
+          `polarbear reboot response genegeerd unit=${unitId}: ${formatError(error)}`,
+        );
+      }
+
+      log(`polarbear reboot gestart unit=${unitId}`);
+      await sleep(500);
+    }
   }
 }
 
@@ -1323,15 +1384,25 @@ class AircoMqttBridge {
 /* HTTP CONTROL FRONTEND                                                      */
 /* -------------------------------------------------------------------------- */
 
+type PolarbearAdminController = {
+  getPolarbearLoopStatus: () => { paused: boolean };
+  pausePolarbearLoop: () => Promise<void>;
+  resumePolarbearLoop: () => Promise<void>;
+  rebootPolarbears: (unitIds: number[]) => Promise<void>;
+  setPolarbearBaudrate: (unitIds: number[], baudrate: number) => Promise<void>;
+};
+
 class ControlHttpServer {
   private server?: Server;
   private client?: mqtt.MqttClient;
   private mqttConnected = false;
   private state: Record<string, { value: number; updatedAt: string }> = {};
   private configStore: ConfigStore;
+  private polarbearAdmin?: PolarbearAdminController;
 
-  constructor(configStore: ConfigStore) {
+  constructor(configStore: ConfigStore, polarbearAdmin?: PolarbearAdminController) {
     this.configStore = configStore;
+    this.polarbearAdmin = polarbearAdmin;
   }
 
   async start(): Promise<void> {
@@ -1453,6 +1524,7 @@ class ControlHttpServer {
         broker: CONFIG.mqtt.broker,
         topics: TOPICS,
         state: this.readableState(),
+        polarbearLoop: this.polarbearAdmin?.getPolarbearLoopStatus() ?? null,
       });
       return;
     }
@@ -1476,6 +1548,93 @@ class ControlHttpServer {
         ok: true,
         settings,
         restartRequired: true,
+      });
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/polarbears/reboot"
+    ) {
+      const polarbearAdmin = this.getPolarbearAdmin();
+
+      this.assertPolarbearLoopPaused(polarbearAdmin);
+      const { unitIds } = await this.readPolarbearAdminRequest(request, url);
+      await polarbearAdmin.rebootPolarbears(unitIds);
+
+      this.sendJson(response, 202, {
+        ok: true,
+        command: "polarbearReboot",
+        unitIds,
+      });
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/polarbears/baudrate"
+    ) {
+      const polarbearAdmin = this.getPolarbearAdmin();
+
+      this.assertPolarbearLoopPaused(polarbearAdmin);
+      const { unitIds, baudrate } = await this.readPolarbearAdminRequest(
+        request,
+        url,
+      );
+
+      if (!baudrate) {
+        throw new Error(
+          `missing baudrate. Supported: ${Object.keys(BAUDRATE_VALUES).join(", ")}`,
+        );
+      }
+
+      if (BAUDRATE_VALUES[baudrate] === undefined) {
+        throw new Error(
+          `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(
+            BAUDRATE_VALUES,
+          ).join(", ")}`,
+        );
+      }
+
+      await polarbearAdmin.setPolarbearBaudrate(unitIds, baudrate);
+
+      this.sendJson(response, 202, {
+        ok: true,
+        command: "polarbearBaudrate",
+        unitIds,
+        baudrate,
+      });
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/polarbears/pause"
+    ) {
+      const polarbearAdmin = this.getPolarbearAdmin();
+
+      await polarbearAdmin.pausePolarbearLoop();
+
+      this.sendJson(response, 200, {
+        ok: true,
+        command: "polarbearLoopPause",
+        polarbearLoop: polarbearAdmin.getPolarbearLoopStatus(),
+      });
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/polarbears/resume"
+    ) {
+      const polarbearAdmin = this.getPolarbearAdmin();
+
+      await polarbearAdmin.resumePolarbearLoop();
+
+      this.sendJson(response, 200, {
+        ok: true,
+        command: "polarbearLoopResume",
+        polarbearLoop: polarbearAdmin.getPolarbearLoopStatus(),
       });
       return;
     }
@@ -1527,6 +1686,96 @@ class ControlHttpServer {
       fanSpeed: this.state[TOPICS.fanSpeedState] ?? null,
       virtualTemp: this.state[TOPICS.virtualTempState] ?? null,
     };
+  }
+
+  private getPolarbearAdmin(): PolarbearAdminController {
+    if (!this.polarbearAdmin) {
+      throw new Error("polarbear admin is niet actief in deze runMode");
+    }
+
+    return this.polarbearAdmin;
+  }
+
+  private assertPolarbearLoopPaused(
+    polarbearAdmin: PolarbearAdminController,
+  ): void {
+    if (!polarbearAdmin.getPolarbearLoopStatus().paused) {
+      throw new Error(
+        "zet eerst de polarbear poll-loop op pauze voordat je reboot of baudrate wijzigt",
+      );
+    }
+  }
+
+  private async readPolarbearAdminRequest(
+    request: IncomingMessage,
+    url: URL,
+  ): Promise<{ unitIds: number[]; baudrate?: number }> {
+    const rawBody = await this.readBody(request);
+    const body = rawBody.trim()
+      ? (JSON.parse(rawBody) as Record<string, unknown>)
+      : {};
+
+    const settings = await this.configStore.getSettings();
+    const configuredUnitIds = settings.wallpanel.units.map((unit) => unit.id);
+    const unitIds = this.parseUnitIds(
+      body.unitIds ??
+        body.ids ??
+        url.searchParams.get("unitIds") ??
+        url.searchParams.get("ids"),
+      configuredUnitIds,
+    );
+    const unknownUnitIds = unitIds.filter(
+      (unitId) => !configuredUnitIds.includes(unitId),
+    );
+
+    if (unknownUnitIds.length > 0) {
+      throw new Error(
+        `onbekende polarbear unit-id(s): ${unknownUnitIds.join(", ")}`,
+      );
+    }
+
+    return {
+      unitIds,
+      baudrate: this.parseOptionalNumber(
+        body.baudrate ??
+          body.baudRate ??
+          body.value ??
+          url.searchParams.get("baudrate") ??
+          url.searchParams.get("baudRate") ??
+          url.searchParams.get("value"),
+      ),
+    };
+  }
+
+  private parseUnitIds(value: unknown, fallback: number[]): number[] {
+    const rawValues =
+      value === undefined || value === null || value === ""
+        ? fallback
+        : Array.isArray(value)
+          ? value
+          : String(value).split(",");
+
+    const unitIds = rawValues
+      .map((unitId) => Number(unitId))
+      .filter((unitId) => Number.isFinite(unitId) && unitId > 0)
+      .map((unitId) => Math.round(unitId));
+    const uniqueUnitIds = Array.from(new Set(unitIds));
+
+    if (uniqueUnitIds.length === 0) {
+      throw new Error("geen geldige polarbear unit-ids opgegeven");
+    }
+
+    return uniqueUnitIds;
+  }
+
+  private parseOptionalNumber(value: unknown): number | undefined {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? Math.round(parsed) : undefined;
   }
 
   private async readNumberFromRequest(
@@ -1695,11 +1944,17 @@ class ControlHttpServer {
     .settings-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
     .unit-list { display: grid; gap: 10px; margin-top: 12px; }
     .unit-row { display: grid; grid-template-columns: 0.6fr 1fr 1.2fr; gap: 10px; }
+    .admin { margin-top: 18px; padding-top: 18px; border-top: 1px solid #d8ded9; }
+    .admin h2 { margin: 0 0 14px; font-size: 18px; line-height: 1.2; }
+    .admin-grid { display: grid; grid-template-columns: 1.2fr 0.8fr auto auto; gap: 12px; align-items: end; }
+    .check-list { display: flex; flex-wrap: wrap; gap: 8px; min-height: 44px; align-items: center; }
+    .check-item { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 10px; border: 1px solid #b9c5bd; border-radius: 8px; background: #fbfcfa; font-size: 14px; font-weight: 700; color: #10251a; }
+    .check-item input { width: auto; min-height: auto; }
     .toast { min-height: 22px; margin-top: 14px; color: #526158; font-size: 14px; }
     @media (max-width: 720px) {
       main { width: min(100vw - 20px, 920px); padding-top: 18px; }
       header { align-items: start; flex-direction: column; }
-      .grid, .stats, .settings-grid, .unit-row { grid-template-columns: 1fr; }
+      .grid, .stats, .settings-grid, .unit-row, .admin-grid { grid-template-columns: 1fr; }
       .temperature { grid-template-columns: 1fr; }
       .stepper { grid-template-columns: 1fr 1fr; }
     }
@@ -1789,6 +2044,30 @@ class ControlHttpServer {
           <button id="saveSettings" class="secondary" type="submit">Instellingen opslaan</button>
         </div>
       </form>
+      <section class="admin">
+        <h2>Polarbears <span id="polarbearLoopStatus" style="font-size:13px;color:#526158;font-weight:700"></span></h2>
+        <div class="admin-grid">
+          <div>
+            <label>Units</label>
+            <div id="adminUnits" class="check-list"></div>
+          </div>
+          <div>
+            <label for="baudrate">Baudrate</label>
+            <select id="baudrate">
+              <option value="9600">9600</option>
+              <option value="19200">19200</option>
+              <option value="57600">57600</option>
+              <option value="115200">115200</option>
+            </select>
+          </div>
+          <button id="setBaudrate" class="secondary" type="button">Baudrate zetten</button>
+          <button id="rebootPolarbears" type="button">Reboot</button>
+        </div>
+        <div class="actions">
+          <button id="pausePolarbearLoop" class="secondary" type="button">Poll pauzeren</button>
+          <button id="resumePolarbearLoop" class="secondary" type="button">Poll hervatten</button>
+        </div>
+      </section>
       <div id="toast" class="toast"></div>
     </section>
   </main>
@@ -1801,6 +2080,7 @@ class ControlHttpServer {
     const dot = document.querySelector("#dot");
     const mqttStatus = document.querySelector("#mqttStatus");
     const unitSettings = document.querySelector("#unitSettings");
+    const adminUnits = document.querySelector("#adminUnits");
     const buttons = Array.from(document.querySelectorAll("button"));
     let currentSettings = null;
 
@@ -1836,6 +2116,9 @@ class ControlHttpServer {
       document.querySelector("#stateFanMode").textContent = json.state.fanMode ? (json.state.fanMode.value === 0 ? "Uit" : "Aan") : "-";
       document.querySelector("#stateFanSpeed").textContent = valueText(json.state.fanSpeed);
       document.querySelector("#stateVirtualTemp").textContent = valueText(json.state.virtualTemp, " C");
+      document.querySelector("#polarbearLoopStatus").textContent = json.polarbearLoop?.paused ? "poll gepauzeerd" : "poll actief";
+      document.querySelector("#setBaudrate").disabled = !json.polarbearLoop?.paused;
+      document.querySelector("#rebootPolarbears").disabled = !json.polarbearLoop?.paused;
     }
 
     function unitField(name, value, type, labelText) {
@@ -1873,6 +2156,23 @@ class ControlHttpServer {
       });
     }
 
+    function renderAdminUnits(units) {
+      adminUnits.textContent = "";
+      units.forEach((unit) => {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        const text = document.createElement("span");
+        label.className = "check-item";
+        input.type = "checkbox";
+        input.value = unit.id;
+        input.checked = true;
+        text.textContent = unit.name + " (" + unit.id + ")";
+        label.appendChild(input);
+        label.appendChild(text);
+        adminUnits.appendChild(label);
+      });
+    }
+
     async function loadSettings() {
       const response = await fetch("/api/settings");
       const json = await response.json();
@@ -1887,6 +2187,47 @@ class ControlHttpServer {
       document.querySelector("#aircoUnitId").value = currentSettings.airco.unitId;
       document.querySelector("#aircoBidirectional").value = String(currentSettings.airco.bidirectional);
       renderUnitSettings(currentSettings.wallpanel.units);
+      renderAdminUnits(currentSettings.wallpanel.units);
+    }
+
+    function selectedAdminUnitIds() {
+      const unitIds = Array.from(adminUnits.querySelectorAll("input:checked")).map((input) => Number(input.value));
+      if (unitIds.length === 0) throw new Error("Selecteer minimaal een unit");
+      return unitIds;
+    }
+
+    async function postPolarbearAdmin(path, body, successText) {
+      setBusy(true);
+      try {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const json = await response.json();
+        if (!response.ok || !json.ok) throw new Error(json.error || "request failed");
+        show(successText + ": " + json.unitIds.join(", "));
+      } catch (error) {
+        show("Mislukt: " + error.message);
+      } finally {
+        setBusy(false);
+        await refresh();
+      }
+    }
+
+    async function postPolarbearLoop(path, successText) {
+      setBusy(true);
+      try {
+        const response = await fetch(path, { method: "POST" });
+        const json = await response.json();
+        if (!response.ok || !json.ok) throw new Error(json.error || "request failed");
+        show(successText);
+      } catch (error) {
+        show("Mislukt: " + error.message);
+      } finally {
+        setBusy(false);
+        await refresh();
+      }
     }
 
     async function saveSettings(event) {
@@ -1920,6 +2261,7 @@ class ControlHttpServer {
         const json = await response.json();
         if (!response.ok || !json.ok) throw new Error(json.error || "settings save failed");
         currentSettings = json.settings;
+        renderAdminUnits(currentSettings.wallpanel.units);
         show("Instellingen opgeslagen. Herstart de sync om nieuwe verbindingen te gebruiken.");
       } catch (error) {
         show("Opslaan mislukt: " + error.message);
@@ -1947,6 +2289,43 @@ class ControlHttpServer {
       post("/api/fan-speed", Number(fanSpeed.value));
     });
 
+    document.querySelector("#pausePolarbearLoop").addEventListener("click", () => {
+      postPolarbearLoop("/api/polarbears/pause", "Polarbear poll gepauzeerd");
+    });
+
+    document.querySelector("#resumePolarbearLoop").addEventListener("click", () => {
+      postPolarbearLoop("/api/polarbears/resume", "Polarbear poll hervat");
+    });
+
+    document.querySelector("#setBaudrate").addEventListener("click", () => {
+      try {
+        const unitIds = selectedAdminUnitIds();
+        const baudrate = Number(document.querySelector("#baudrate").value);
+        if (!confirm("Baudrate " + baudrate + " zetten voor units " + unitIds.join(", ") + "?")) return;
+        postPolarbearAdmin(
+          "/api/polarbears/baudrate",
+          { unitIds, baudrate },
+          "Baudrate gezet"
+        );
+      } catch (error) {
+        show("Mislukt: " + error.message);
+      }
+    });
+
+    document.querySelector("#rebootPolarbears").addEventListener("click", () => {
+      try {
+        const unitIds = selectedAdminUnitIds();
+        if (!confirm("Reboot units " + unitIds.join(", ") + "?")) return;
+        postPolarbearAdmin(
+          "/api/polarbears/reboot",
+          { unitIds },
+          "Reboot gestart"
+        );
+      } catch (error) {
+        show("Mislukt: " + error.message);
+      }
+    });
+
     settingsForm.addEventListener("submit", saveSettings);
 
     refresh();
@@ -1967,6 +2346,9 @@ type PolarbearMqttHandlers = {
   onSetTemperatureCommand: (value: number) => void;
   onFanModeCommand: (value: number) => void;
   onFanSpeedCommand: (value: number) => void;
+  onSetTemperatureState: (value: number) => void;
+  onFanModeState: (value: number) => void;
+  onFanSpeedState: (value: number) => void;
 };
 
 class PolarbearMqttClient {
@@ -1988,6 +2370,9 @@ class PolarbearMqttClient {
         client.subscribe(
           [
             TOPICS.virtualTempState,
+            TOPICS.setTemperatureState,
+            TOPICS.fanModeState,
+            TOPICS.fanSpeedState,
             TOPICS.setTemperatureSet,
             TOPICS.fanModeSet,
             TOPICS.fanSpeedSet,
@@ -2051,6 +2436,21 @@ class PolarbearMqttClient {
       return;
     }
 
+    if (topic === TOPICS.setTemperatureState) {
+      this.handlers.onSetTemperatureState(round1(value));
+      return;
+    }
+
+    if (topic === TOPICS.fanModeState) {
+      this.handlers.onFanModeState(normalizeFanMode(value));
+      return;
+    }
+
+    if (topic === TOPICS.fanSpeedState) {
+      this.handlers.onFanSpeedState(Math.round(value));
+      return;
+    }
+
     if (topic === TOPICS.setTemperatureSet) {
       this.handlers.onSetTemperatureCommand(round1(value));
       return;
@@ -2092,6 +2492,9 @@ class WallpanelPoller {
     onSetTemperatureCommand: (value) => this.queueSetpointCommandFromMqtt(value),
     onFanModeCommand: (value) => this.queueFanModeCommandFromMqtt(value),
     onFanSpeedCommand: (value) => this.queueFanSpeedCommandFromMqtt(value),
+    onSetTemperatureState: (value) => this.rememberSetpointStateFromMqtt(value),
+    onFanModeState: (value) => this.rememberFanModeStateFromMqtt(value),
+    onFanSpeedState: (value) => this.rememberFanSpeedStateFromMqtt(value),
   });
 
   private candidates = new Map<string, Candidate>();
@@ -2106,10 +2509,15 @@ class WallpanelPoller {
    * We bewaren alleen de laatste waarde.
    */
   private latestVirtualTempFromMqtt: number | null = null;
+  private latestSetpointStateFromMqtt: number | null = null;
+  private latestFanModeStateFromMqtt: number | null = null;
+  private latestFanSpeedStateFromMqtt: number | null = null;
   private virtualTempDirty = false;
   private virtualTempFlushRunning = false;
 
   private running = true;
+  private pollPaused = false;
+  private pollCycleRunning = false;
 
   async start(): Promise<void> {
     await this.client.connect(CONFIG.wallpanel.host, CONFIG.wallpanel.port);
@@ -2128,16 +2536,72 @@ class WallpanelPoller {
     await this.mqttClient.connect();
 
     while (this.running) {
-      await this.poll();
-      await this.flushMqttCommands();
-      await this.processCandidates();
+      if (this.pollPaused) {
+        await sleep(CONFIG.wallpanel.pollIntervalMs);
+        continue;
+      }
 
-      /**
-       * VirtualTemp pas na de normale wallpanel-sync proberen te schrijven.
-       */
-      await this.flushVirtualTempIfWallpanelIdle();
+      this.pollCycleRunning = true;
+
+      try {
+        await this.poll();
+        await this.flushMqttCommands();
+        await this.processCandidates();
+
+        /**
+         * VirtualTemp pas na de normale wallpanel-sync proberen te schrijven.
+         */
+        await this.flushVirtualTempIfWallpanelIdle();
+      } finally {
+        this.pollCycleRunning = false;
+      }
 
       await sleep(CONFIG.wallpanel.pollIntervalMs);
+    }
+  }
+
+  async rebootPolarbears(unitIds: number[]): Promise<void> {
+    await this.polarbear.reboot(unitIds);
+  }
+
+  async setPolarbearBaudrate(
+    unitIds: number[],
+    baudrate: number,
+  ): Promise<void> {
+    await this.polarbear.setBaudrate(unitIds, baudrate);
+  }
+
+  getPolarbearLoopStatus(): { paused: boolean } {
+    return {
+      paused: this.pollPaused,
+    };
+  }
+
+  async pausePolarbearLoop(): Promise<void> {
+    if (this.pollPaused) {
+      return;
+    }
+
+    this.pollPaused = true;
+    await this.waitForPollIdle();
+    log("polarbear poll-loop gepauzeerd, modbus verbinding blijft open");
+  }
+
+  async resumePolarbearLoop(): Promise<void> {
+    if (!this.pollPaused) {
+      return;
+    }
+
+    log("polarbear poll-loop hervatten: mqtt state eerst naar polarbears");
+    await this.syncLatestMqttStateToPolarbears();
+    await this.initializeSetpointCache();
+    this.pollPaused = false;
+    log("polarbear poll-loop hervat");
+  }
+
+  private async waitForPollIdle(): Promise<void> {
+    while (this.pollCycleRunning) {
+      await sleep(25);
     }
   }
 
@@ -2405,6 +2869,50 @@ class WallpanelPoller {
     this.virtualTempDirty = true;
 
     log(`virtualTemp queued from mqtt value=${value} rounded=${rounded}`);
+  }
+
+  private rememberSetpointStateFromMqtt(value: number): void {
+    const temperature = round1(value);
+    this.latestSetpointStateFromMqtt = temperature;
+
+    if (this.pollPaused) {
+      log(`setpoint state bewaard tijdens pauze value=${temperature}`);
+    }
+  }
+
+  private rememberFanModeStateFromMqtt(value: number): void {
+    const fanMode = normalizeFanMode(value);
+    this.latestFanModeStateFromMqtt = fanMode;
+
+    if (this.pollPaused) {
+      log(`fanMode state bewaard tijdens pauze value=${fanMode}`);
+    }
+  }
+
+  private rememberFanSpeedStateFromMqtt(value: number): void {
+    const fanSpeed = Math.round(value);
+    this.latestFanSpeedStateFromMqtt = fanSpeed;
+
+    if (this.pollPaused) {
+      log(`fanSpeed state bewaard tijdens pauze value=${fanSpeed}`);
+    }
+  }
+
+  private async syncLatestMqttStateToPolarbears(): Promise<void> {
+    if (this.latestSetpointStateFromMqtt !== null) {
+      this.queueSetpointCommandFromMqtt(this.latestSetpointStateFromMqtt);
+    }
+
+    if (this.latestFanModeStateFromMqtt !== null) {
+      this.queueFanModeCommandFromMqtt(this.latestFanModeStateFromMqtt);
+    }
+
+    if (this.latestFanSpeedStateFromMqtt !== null) {
+      this.queueFanSpeedCommandFromMqtt(this.latestFanSpeedStateFromMqtt);
+    }
+
+    await this.flushMqttCommands();
+    await this.flushVirtualTempIfWallpanelIdle();
   }
 
   private queueSetpointCommandFromMqtt(value: number): void {
@@ -2825,7 +3333,7 @@ const start = async (): Promise<void> => {
       : null;
 
   controlServer = CONFIG.control.enabled
-    ? new ControlHttpServer(configStore)
+    ? new ControlHttpServer(configStore, wallpanelPoller ?? undefined)
     : null;
 
   if (controlServer) {
