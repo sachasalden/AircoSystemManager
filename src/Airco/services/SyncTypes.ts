@@ -51,6 +51,12 @@ export type PanelDevice = {
   ip: string;
   port: number;
   ids: number[];
+  modbusUnits?: Array<{
+    id: number;
+    type?: string;
+    name?: string;
+    zones?: number[];
+  }>;
   type?: string;
 };
 

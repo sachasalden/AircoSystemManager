@@ -29,6 +29,9 @@ export default class SyncMainLoop {
   private aircoTimer: NodeJS.Timeout | null = null;
   private topologyTimer: NodeJS.Timeout | null = null;
   private isStopped = false;
+  private polarbearLoopPaused = false;
+  private panelLoopRunning = false;
+  private readonly pendingAircoMessagesForPanels = new Map<string, SyncMessage>();
 
   constructor(
     repository: AircopanelRepository,
@@ -59,14 +62,10 @@ export default class SyncMainLoop {
         const fullMessage = this.buildMessage(message);
 
         console.log(
-          '[SyncMainLoop] local airco change -> apply to panel + mqtt',
+          '[SyncMainLoop] local airco change -> mqtt',
           fullMessage,
         );
 
-        await this.panelMonitor.applyAircoChangeLocally(
-          this.rooms,
-          fullMessage,
-        );
         await this.mqtt.publish(fullMessage);
       },
       async (context, snapshot) => {
@@ -88,14 +87,10 @@ export default class SyncMainLoop {
         const fullMessage = this.buildMessage(message);
 
         console.log(
-          '[SyncMainLoop] local panel change -> apply to airco + mqtt',
+          '[SyncMainLoop] local panel change -> mqtt',
           fullMessage,
         );
 
-        await this.aircoMonitor.applyPanelChangeLocally(
-          this.rooms,
-          fullMessage,
-        );
         await this.mqtt.publish(fullMessage);
       },
       async (context, snapshot) => {
@@ -164,6 +159,36 @@ export default class SyncMainLoop {
     console.log('[SyncMainLoop] stopped');
   }
 
+  getPolarbearLoopStatus(): {
+    paused: boolean;
+    running: boolean;
+    queuedAircoMessages: number;
+  } {
+    return {
+      paused: this.polarbearLoopPaused,
+      running: this.panelLoopRunning,
+      queuedAircoMessages: this.pendingAircoMessagesForPanels.size,
+    };
+  }
+
+  async pausePolarbearLoop(): Promise<void> {
+    this.polarbearLoopPaused = true;
+
+    while (this.panelLoopRunning) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    await this.panelMonitor.stop();
+
+    console.log('[SyncMainLoop] polarbear sync paused');
+  }
+
+  async resumePolarbearLoop(): Promise<void> {
+    await this.flushPendingAircoMessagesToPanels();
+    this.polarbearLoopPaused = false;
+    console.log('[SyncMainLoop] polarbear sync resumed');
+  }
+
   async applyAircoCommand(command: {
     zoneId: string;
     roomId: string;
@@ -200,7 +225,6 @@ export default class SyncMainLoop {
       timestamp: fullMessage.timestamp,
     });
 
-    await this.panelMonitor.applyAircoChangeLocally(this.rooms, fullMessage);
     await this.mqtt.publish(fullMessage);
 
     return result;
@@ -226,11 +250,17 @@ export default class SyncMainLoop {
       return;
     }
 
-    try {
-      await this.panelMonitor.pollRooms(this.rooms);
-      this.echoGuard.cleanup();
-    } catch (error) {
-      console.error('[SyncMainLoop] panel loop failed', error);
+    if (!this.polarbearLoopPaused) {
+      this.panelLoopRunning = true;
+
+      try {
+        await this.panelMonitor.pollRooms(this.rooms);
+        this.echoGuard.cleanup();
+      } catch (error) {
+        console.error('[SyncMainLoop] panel loop failed', error);
+      } finally {
+        this.panelLoopRunning = false;
+      }
     }
 
     if (!this.isStopped) {
@@ -278,7 +308,7 @@ export default class SyncMainLoop {
   }
 
   private async handleRemoteMessage(message: SyncMessage): Promise<void> {
-    console.log('[SyncMainLoop] remote mqtt message received', message);
+    console.log('[SyncMainLoop] mqtt sync message received', message);
 
     if (message.origin === 'panel') {
       await this.aircoMonitor.applyPanelChangeLocally(this.rooms, message);
@@ -286,7 +316,50 @@ export default class SyncMainLoop {
     }
 
     if (message.origin === 'airco') {
+      if (this.polarbearLoopPaused) {
+        this.queueAircoMessageForPanels(message);
+        return;
+      }
+
       await this.panelMonitor.applyAircoChangeLocally(this.rooms, message);
+    }
+  }
+
+  private queueAircoMessageForPanels(message: SyncMessage): void {
+    const key = [
+      message.zoneId,
+      message.roomId,
+      message.zone,
+      message.property,
+    ].join(':');
+
+    this.pendingAircoMessagesForPanels.delete(key);
+    this.pendingAircoMessagesForPanels.set(key, message);
+
+    console.log('[SyncMainLoop] queued airco mqtt message while polarbear sync paused', {
+      key,
+      queuedAircoMessages: this.pendingAircoMessagesForPanels.size,
+      value: message.value,
+    });
+  }
+
+  private async flushPendingAircoMessagesToPanels(): Promise<void> {
+    while (this.pendingAircoMessagesForPanels.size > 0) {
+      const messages = [...this.pendingAircoMessagesForPanels.values()].sort(
+        (left, right) =>
+          new Date(left.timestamp).getTime() -
+          new Date(right.timestamp).getTime(),
+      );
+
+      this.pendingAircoMessagesForPanels.clear();
+
+      console.log('[SyncMainLoop] applying queued airco mqtt messages to polarbears', {
+        count: messages.length,
+      });
+
+      for (const message of messages) {
+        await this.panelMonitor.applyAircoChangeLocally(this.rooms, message);
+      }
     }
   }
 }

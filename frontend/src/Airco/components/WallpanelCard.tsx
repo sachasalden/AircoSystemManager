@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { WallpanelDevice, WallpanelVersion } from '../model';
+import type { WallpanelDevice, WallpanelUnit, WallpanelVersion } from '../model';
 import {
   Field,
   NumberInput,
   SelectInput,
   TextInput,
 } from './ClimateFormControls';
-import TerminalIdsField from './TerminalIdsField';
 
 type WallpanelCardProps = {
   device: WallpanelDevice;
@@ -15,9 +14,10 @@ type WallpanelCardProps = {
     id: string;
     name?: string;
     ip: string;
-    type?: WallpanelVersion;
+    type?: string;
     port: number;
     ids: number[];
+    modbusUnits: WallpanelUnit[];
   }) => Promise<void>;
 };
 
@@ -28,70 +28,89 @@ export default function WallpanelCard({
 }: WallpanelCardProps) {
   const [isEditing, setIsEditing] = useState(false);
 
-  const initialIds =
-    device.terminalIds?.length && device.terminalIds.length > 0
-      ? device.terminalIds
-      : device.ids || [];
+  const initialUnits =
+    device.modbusUnits?.length && device.modbusUnits.length > 0
+      ? device.modbusUnits
+      : (device.ids || []).map((id) => ({
+          id,
+          type: (device.version || 'polarbear-v1') as WallpanelVersion,
+        }));
 
   const [editName, setEditName] = useState(device.name || '');
   const [editIp, setEditIp] = useState(device.ip);
-  const [editType, setEditType] = useState<WallpanelVersion>(
-    (device.version as WallpanelVersion) || 'polarbear-v1',
-  );
   const [editPort, setEditPort] = useState<number | ''>(device.port);
-  const [editNewTerminalId, setEditNewTerminalId] = useState('');
-  const [editTerminalIds, setEditTerminalIds] = useState<number[]>(initialIds);
+  const [editNewUnitId, setEditNewUnitId] = useState('');
+  const [editNewUnitType, setEditNewUnitType] =
+    useState<WallpanelVersion>('polarbear-v1');
+  const [editUnits, setEditUnits] = useState<WallpanelUnit[]>(initialUnits);
 
   useEffect(() => {
-    const idsNow =
-      device.terminalIds?.length && device.terminalIds.length > 0
-        ? device.terminalIds
-        : device.ids || [];
+    const unitsNow =
+      device.modbusUnits?.length && device.modbusUnits.length > 0
+        ? device.modbusUnits
+        : (device.ids || []).map((id) => ({
+            id,
+            type: (device.version || 'polarbear-v1') as WallpanelVersion,
+          }));
 
     setEditName(device.name || '');
     setEditIp(device.ip);
-    setEditType((device.version as WallpanelVersion) || 'polarbear-v1');
     setEditPort(device.port);
-    setEditTerminalIds(idsNow);
-    setEditNewTerminalId('');
+    setEditUnits(unitsNow);
+    setEditNewUnitId('');
+    setEditNewUnitType('polarbear-v1');
   }, [device]);
 
-  const terminalsText = initialIds.length ? initialIds.join(', ') : '—';
+  const unitsText = initialUnits.length
+    ? initialUnits.map((unit) => `${unit.id} (${unit.type})`).join(', ')
+    : '—';
 
-  function addEditTerminalId() {
-    if (!editNewTerminalId) return;
+  function addEditUnitIds() {
+    if (!editNewUnitId) return;
 
-    const idsToAdd = editNewTerminalId
+    const idsToAdd = editNewUnitId
       .split(',')
       .map((part) => Number(part.trim()))
       .filter((value) => !Number.isNaN(value));
 
-    setEditTerminalIds((state) => {
-      const next = new Set<number>(state);
-      idsToAdd.forEach((id) => next.add(id));
-      return Array.from(next).sort((a, b) => a - b);
-    });
+    setEditUnits((state) =>
+      [
+        ...state,
+        ...idsToAdd
+          .filter((id) => !state.some((unit) => unit.id === id))
+          .map((id) => ({ id, type: editNewUnitType })),
+      ].sort((a, b) => a.id - b.id),
+    );
 
-    setEditNewTerminalId('');
+    setEditNewUnitId('');
   }
 
-  function removeEditTerminalId(id: number) {
-    setEditTerminalIds((state) => state.filter((terminalId) => terminalId !== id));
+  function removeEditUnitId(id: number) {
+    setEditUnits((state) => state.filter((unit) => unit.id !== id));
+  }
+
+  function setEditUnitVersion(id: number, type: WallpanelVersion) {
+    setEditUnits((state) =>
+      state.map((unit) => (unit.id === id ? { ...unit, type } : unit)),
+    );
   }
 
   function cancelEdit() {
-    const idsNow =
-      device.terminalIds?.length && device.terminalIds.length > 0
-        ? device.terminalIds
-        : device.ids || [];
+    const unitsNow =
+      device.modbusUnits?.length && device.modbusUnits.length > 0
+        ? device.modbusUnits
+        : (device.ids || []).map((id) => ({
+            id,
+            type: (device.version || 'polarbear-v1') as WallpanelVersion,
+          }));
 
     setIsEditing(false);
     setEditName(device.name || '');
     setEditIp(device.ip);
-    setEditType((device.version as WallpanelVersion) || 'polarbear-v1');
     setEditPort(device.port);
-    setEditTerminalIds(idsNow);
-    setEditNewTerminalId('');
+    setEditUnits(unitsNow);
+    setEditNewUnitId('');
+    setEditNewUnitType('polarbear-v1');
   }
 
   async function saveEdit() {
@@ -104,9 +123,10 @@ export default function WallpanelCard({
       id: device.id,
       name: editName,
       ip: editIp,
-      type: editType,
+      type: 'moxa',
       port: editPort === '' ? 0 : Number(editPort),
-      ids: [...editTerminalIds],
+      ids: editUnits.map((unit) => unit.id),
+      modbusUnits: editUnits,
     });
 
     setIsEditing(false);
@@ -121,7 +141,7 @@ export default function WallpanelCard({
             <div className="card-title-text">
               <h4>{device.name || 'Wallpanel'}</h4>
               <p>
-                {device.ip}:{device.port} • {device.version || device.type || 'unknown'}
+                {device.ip}:{device.port} • {device.type || 'moxa'}
               </p>
             </div>
           </div>
@@ -148,7 +168,7 @@ export default function WallpanelCard({
             <div className="big-temp">Moxa</div>
             <div className="current-row">
               <span>🔌</span>
-              <span>Wallpanels: {terminalsText}</span>
+              <span>Units: {unitsText}</span>
             </div>
 
             <div className="stats-grid">
@@ -179,27 +199,65 @@ export default function WallpanelCard({
                 <TextInput value={editIp} onChange={setEditIp} />
               </Field>
 
-              <Field label="Polarbear Version">
-                <SelectInput
-                  value={editType}
-                  onChange={(value) => setEditType(value as WallpanelVersion)}
-                >
-                  <option value="polarbear-v1">polarbear-v1</option>
-                  <option value="polarbear-v3">polarbear-v3</option>
-                </SelectInput>
-              </Field>
-
               <Field label="Port">
                 <NumberInput value={editPort} onChange={setEditPort} />
               </Field>
 
-              <TerminalIdsField
-                value={editNewTerminalId}
-                ids={editTerminalIds}
-                onInputChange={setEditNewTerminalId}
-                onAdd={addEditTerminalId}
-                onRemove={removeEditTerminalId}
-              />
+              <Field label="Unit IDs" span={2}>
+                <div className="unit-add-row">
+                  <TextInput
+                    value={editNewUnitId}
+                    onChange={setEditNewUnitId}
+                    placeholder="Unit ID"
+                  />
+                  <SelectInput
+                    value={editNewUnitType}
+                    onChange={(value) =>
+                      setEditNewUnitType(value as WallpanelVersion)
+                    }
+                  >
+                    <option value="polarbear-v1">polarbear-v1</option>
+                    <option value="polarbear-v3">polarbear-v3</option>
+                  </SelectInput>
+                  <button
+                    type="button"
+                    className="btn add-btn"
+                    onClick={addEditUnitIds}
+                  >
+                    Add unit
+                  </button>
+                </div>
+
+                <div className="unit-config-list">
+                  {editUnits.length === 0 && (
+                    <div className="empty">No unit IDs</div>
+                  )}
+                  {editUnits.map((unit) => (
+                    <div className="unit-config-row" key={unit.id}>
+                      <strong>Unit {unit.id}</strong>
+                      <SelectInput
+                        value={unit.type}
+                        onChange={(value) =>
+                          setEditUnitVersion(
+                            unit.id,
+                            value as WallpanelVersion,
+                          )
+                        }
+                      >
+                        <option value="polarbear-v1">polarbear-v1</option>
+                        <option value="polarbear-v3">polarbear-v3</option>
+                      </SelectInput>
+                      <button
+                        type="button"
+                        className="btn ghost-btn"
+                        onClick={() => removeEditUnitId(unit.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </Field>
             </div>
 
             <div className="card-btn-row">

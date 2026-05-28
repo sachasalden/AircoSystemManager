@@ -1,20 +1,26 @@
 import ModbusRTU from 'modbus-serial';
 
 export default class ModbusClient {
-  private client = new ModbusRTU();
+  private client: any;
   private connected = false;
-  private reconnecting = false;
   private lastHost?: string;
   private lastPort?: number;
   private lastRequestAt = 0;
   private requestQueue: Promise<unknown> = Promise.resolve();
+  private connectPromise: Promise<void> | null = null;
 
   constructor(
-    timeout = 10000,
+    private timeout = 10000,
     private requestGapMs = 0,
-    private reconnectDelayMs = 5000,
   ) {
-    this.client.setTimeout(timeout);
+    this.client = this.createClient();
+  }
+
+  private createClient(): any {
+    const client = new ModbusRTU();
+    client.setTimeout(this.timeout);
+
+    return client;
   }
 
   async connect(host: string, port: number): Promise<void> {
@@ -25,8 +31,14 @@ export default class ModbusClient {
       return;
     }
 
-    await new Promise<void>((resolve, reject) => {
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+
+    this.connectPromise = new Promise<void>((resolve, reject) => {
       (this.client as any).connectTelnet(host, { port }, (error: unknown) => {
+        this.connectPromise = null;
+
         if (error) {
           this.connected = false;
           reject(error);
@@ -34,22 +46,26 @@ export default class ModbusClient {
         }
 
         this.connected = true;
-        this.reconnecting = false;
         resolve();
       });
     });
+
+    return this.connectPromise;
   }
 
   async disconnect(): Promise<void> {
-    if (!this.connected) {
-      return;
-    }
-
     await new Promise<void>((resolve) => {
-      this.client.close(() => {
+      try {
+        this.client.close(() => {
+          this.connected = false;
+          this.connectPromise = null;
+          resolve();
+        });
+      } catch {
         this.connected = false;
+        this.connectPromise = null;
         resolve();
-      });
+      }
     });
   }
 
@@ -57,25 +73,10 @@ export default class ModbusClient {
     await this.disconnect();
   }
 
-  handleReconnect(): void {
-    if (this.reconnecting) {
-      return;
-    }
-
-    if (!this.lastHost || this.lastPort === undefined) {
-      console.warn('Connection lost. No stored host/port to reconnect to.');
-      return;
-    }
-
-    this.reconnecting = true;
+  markDisconnected(): void {
     this.connected = false;
-
-    setTimeout(() => {
-      this.connect(this.lastHost!, this.lastPort!).catch((error) => {
-        console.error('Reconnection failed:', error?.message || error);
-        this.reconnecting = false;
-      });
-    }, this.reconnectDelayMs);
+    this.connectPromise = null;
+    this.resetClient();
   }
 
   setID(id: number): void {
@@ -84,22 +85,90 @@ export default class ModbusClient {
 
   async readHoldingRegisters(register: number, count = 1): Promise<number[]> {
     return this.enqueue(async () => {
+      await this.ensureConnected();
       await this.waitForRequestGap();
 
-      const result = await this.client.readHoldingRegisters(register, count);
-      this.lastRequestAt = Date.now();
+      try {
+        const result = await this.client.readHoldingRegisters(register, count);
+        this.lastRequestAt = Date.now();
 
-      return result.data;
+        return result.data;
+      } catch (error) {
+        this.handleOperationError(error);
+        throw error;
+      }
     });
   }
 
   async writeRegister(register: number, value: number): Promise<void> {
     await this.enqueue(async () => {
+      await this.ensureConnected();
       await this.waitForRequestGap();
 
-      await this.client.writeRegister(register, value);
-      this.lastRequestAt = Date.now();
+      try {
+        await this.client.writeRegister(register, value);
+        this.lastRequestAt = Date.now();
+      } catch (error) {
+        this.handleOperationError(error);
+        throw error;
+      }
     });
+  }
+
+  async writeCoil(coil: number, value: boolean): Promise<void> {
+    await this.enqueue(async () => {
+      await this.ensureConnected();
+      await this.waitForRequestGap();
+
+      try {
+        await this.client.writeCoil(coil, value);
+        this.lastRequestAt = Date.now();
+      } catch (error) {
+        this.handleOperationError(error);
+        throw error;
+      }
+    });
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (this.connected) {
+      return;
+    }
+
+    if (!this.lastHost || this.lastPort === undefined) {
+      throw new Error('Modbus client is not connected');
+    }
+
+    await this.connect(this.lastHost, this.lastPort);
+  }
+
+  private handleOperationError(error: unknown): void {
+    if (this.isConnectionError(error)) {
+      this.markDisconnected();
+    }
+  }
+
+  private resetClient(): void {
+    try {
+      this.client.close(() => undefined);
+    } catch {}
+
+    this.client = this.createClient();
+  }
+
+  private isConnectionError(error: unknown): boolean {
+    const err = error as { name?: string; message?: string; errno?: string; code?: string };
+    const text = `${err?.name ?? ''} ${err?.message ?? ''} ${err?.errno ?? ''} ${err?.code ?? ''}`.toLowerCase();
+
+    return (
+      text.includes('port not open') ||
+      text.includes('not open') ||
+      text.includes('econnrefused') ||
+      text.includes('econnreset') ||
+      text.includes('epipe') ||
+      text.includes('socket closed') ||
+      text.includes('connection closed')
+    );
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {

@@ -27,6 +27,12 @@ function snapToStep(value: number, min: number, step: number): number {
   return Number(snapped.toFixed(1));
 }
 
+function roundHalf(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(value * 2) / 2
+    : value;
+}
+
 function formatNumber(value: number | undefined, fallback = '-'): string {
   if (value === undefined || Number.isNaN(value)) {
     return fallback;
@@ -60,6 +66,7 @@ export default function SemiCircularTemperatureSlider({
 
   const knobX = CENTER_X + RADIUS * Math.cos(angleInRad);
   const knobY = CENTER_Y - RADIUS * Math.sin(angleInRad);
+  const roundedVirtualTemperature = roundHalf(virtualTemperature);
 
   const arcPath = `
     M ${CENTER_X - RADIUS} ${CENTER_Y}
@@ -196,7 +203,7 @@ export default function SemiCircularTemperatureSlider({
       <div className="airco-semicircle-center">
         <p className="arc-center-label">Virtual temp</p>
         <strong className="arc-center-value">
-          {formatNumber(virtualTemperature)}°
+          {formatNumber(roundedVirtualTemperature)}°
         </strong>
         <span className="arc-center-sub">
           Target {formatNumber(value)}° · Zone {zone}

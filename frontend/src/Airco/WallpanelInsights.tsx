@@ -4,8 +4,12 @@ import WallpanelInsightPanelCard from './wallpanel-insights/WallpanelInsightPane
 import WallpanelInsightsFilters from './wallpanel-insights/WallpanelInsightsFilters';
 import type {
   InsightResponse,
+  InsightPanel,
+  PolarbearLoopStatus,
   WallpanelInsightsProps,
 } from './wallpanel-insights/model';
+
+const API_BASE = 'http://localhost:3000';
 
 export default function WallpanelInsights({
   zones,
@@ -15,7 +19,13 @@ export default function WallpanelInsights({
   setSelectedRoomId,
 }: WallpanelInsightsProps) {
   const [data, setData] = useState<InsightResponse | null>(null);
+  const [syncStatus, setSyncStatus] = useState<PolarbearLoopStatus>({
+    paused: false,
+    running: false,
+  });
   const [loading, setLoading] = useState(false);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminMessage, setAdminMessage] = useState('');
   const [error, setError] = useState('');
 
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId);
@@ -31,7 +41,7 @@ export default function WallpanelInsights({
       setError('');
 
       const res = await axios.get(
-        `http://localhost:3000/wallpanel-insights/rooms/${selectedZoneId}/${selectedRoomId}`,
+        `${API_BASE}/wallpanel-insights/rooms/${selectedZoneId}/${selectedRoomId}`,
       );
 
       setData(res.data);
@@ -40,6 +50,86 @@ export default function WallpanelInsights({
       setError('Failed to fetch wallpanel insights');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchSyncStatus() {
+    try {
+      const res = await axios.get(`${API_BASE}/wallpanel-insights/sync/status`);
+      setSyncStatus(res.data.polarbearLoop);
+    } catch (err) {
+      console.error('Failed to fetch polarbear sync status', err);
+    }
+  }
+
+  async function setSyncPaused(paused: boolean) {
+    try {
+      setAdminBusy(true);
+      setAdminMessage('');
+
+      const res = await axios.post(
+        `${API_BASE}/wallpanel-insights/sync/${paused ? 'pause' : 'resume'}`,
+      );
+
+      setSyncStatus(res.data.polarbearLoop);
+      setAdminMessage(paused ? 'Polarbear sync paused' : 'Polarbear sync resumed');
+    } catch (err: any) {
+      setAdminMessage(
+        err?.response?.data?.message ||
+          (paused ? 'Failed to pause sync' : 'Failed to resume sync'),
+      );
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function rebootPanel(panel: InsightPanel) {
+    const ok = window.confirm(
+      `Reboot wallpanel ${panel.name} terminals ${panel.terminalIds.join(', ')}?`,
+    );
+
+    if (!ok) return;
+
+    try {
+      setAdminBusy(true);
+      setAdminMessage('');
+
+      await axios.post(
+        `${API_BASE}/wallpanel-insights/panels/${panel.panelId}/reboot`,
+        { unitIds: panel.terminalIds },
+      );
+
+      setAdminMessage(`Reboot sent to ${panel.name}`);
+    } catch (err: any) {
+      setAdminMessage(err?.response?.data?.message || 'Failed to reboot panel');
+    } finally {
+      setAdminBusy(false);
+      void fetchSyncStatus();
+    }
+  }
+
+  async function setPanelBaudrate(panel: InsightPanel, baudrate: number) {
+    const ok = window.confirm(
+      `Set baudrate ${baudrate} for ${panel.name} terminals ${panel.terminalIds.join(', ')}?`,
+    );
+
+    if (!ok) return;
+
+    try {
+      setAdminBusy(true);
+      setAdminMessage('');
+
+      await axios.post(
+        `${API_BASE}/wallpanel-insights/panels/${panel.panelId}/baudrate`,
+        { unitIds: panel.terminalIds, baudrate },
+      );
+
+      setAdminMessage(`Baudrate ${baudrate} sent to ${panel.name}`);
+    } catch (err: any) {
+      setAdminMessage(err?.response?.data?.message || 'Failed to set baudrate');
+    } finally {
+      setAdminBusy(false);
+      void fetchSyncStatus();
     }
   }
 
@@ -53,12 +143,22 @@ export default function WallpanelInsights({
   }, [selectedZoneId, selectedRoomId]);
 
   useEffect(() => {
+    void fetchSyncStatus();
+
+    const interval = window.setInterval(() => {
+      void fetchSyncStatus();
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (!selectedZoneId || !selectedRoomId) {
       return;
     }
 
     setLoading(true);
-    const streamUrl = `http://localhost:3000/wallpanel-insights/stream/rooms/${selectedZoneId}/${selectedRoomId}`;
+    const streamUrl = `${API_BASE}/wallpanel-insights/stream/rooms/${selectedZoneId}/${selectedRoomId}`;
     const eventSource = new EventSource(streamUrl);
 
     eventSource.addEventListener('insights', (event) => {
@@ -109,9 +209,38 @@ export default function WallpanelInsights({
           <p className="notice">Live Polarbear-data van de gekozen room.</p>
         </div>
 
-        <p className="notice" style={{ margin: 0 }}>
-          {loading ? 'Connecting...' : 'Live via server events'}
-        </p>
+        <div className="wallpanel-sync-toolbar">
+          <span
+            className={`sync-pill ${syncStatus.paused ? 'paused' : 'active'}`}
+          >
+            <span className="sync-dot" />
+            {syncStatus.paused ? 'Sync paused' : 'Sync active'}
+          </span>
+          <button
+            className="sync-action-btn"
+            type="button"
+            disabled={adminBusy || syncStatus.paused}
+            onClick={() => void setSyncPaused(true)}
+          >
+            Pause sync
+          </button>
+          <button
+            className="sync-action-btn primary"
+            type="button"
+            disabled={adminBusy || !syncStatus.paused}
+            onClick={() => void setSyncPaused(false)}
+          >
+            Resume sync
+          </button>
+        </div>
+      </div>
+
+      <div className="wallpanel-admin-status">
+        <span>{loading ? 'Connecting...' : 'Live via server events'}</span>
+        {syncStatus.paused && syncStatus.queuedAircoMessages ? (
+          <span>{syncStatus.queuedAircoMessages} queued airco changes</span>
+        ) : null}
+        {adminMessage ? <span>{adminMessage}</span> : null}
       </div>
 
       <WallpanelInsightsFilters
@@ -137,7 +266,16 @@ export default function WallpanelInsights({
       ) : (
         <div className="cards-grid">
           {data?.panels.map((panel) => (
-            <WallpanelInsightPanelCard key={panel.panelId} panel={panel} />
+            <WallpanelInsightPanelCard
+              key={panel.panelId}
+              panel={panel}
+              syncPaused={syncStatus.paused}
+              adminBusy={adminBusy}
+              onReboot={(targetPanel) => void rebootPanel(targetPanel)}
+              onBaudrate={(targetPanel, baudrate) =>
+                void setPanelBaudrate(targetPanel, baudrate)
+              }
+            />
           ))}
         </div>
       )}

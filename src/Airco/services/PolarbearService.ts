@@ -33,15 +33,34 @@ const INPUTS = {
   zone2Flags: 118,
 } as const;
 
+const ADMIN = {
+  baudRate: 9002,
+  reboot: 9991,
+} as const;
+
+const BAUDRATE_VALUES: Record<number, number> = {
+  9600: 2,
+  19200: 3,
+  57600: 4,
+  115200: 5,
+};
+
 const FLAG_BITS: Record<FlagType, Record<Zone, number>> = {
   setpoint: { 1: 0, 2: 8 },
   fanMode: { 1: 1, 2: 9 },
 };
 
+function roundHalf(value: number): number {
+  return Math.round(value * 2) / 2;
+}
+
 export default class PolarbearService {
   private detectedVersions = new Map<number, 'v1' | 'v2'>();
 
-  constructor(private client: ModbusClient) {}
+  constructor(
+    private client: ModbusClient,
+    private configuredUnitTypes: Record<number, string> = {},
+  ) {}
 
   async getSetpoint(unitId: number, zone: Zone): Promise<number> {
     return this.readTemperature(unitId, this.zoneRegister(zone, REGISTERS_V1.zone1Setpoint, REGISTERS_V1.zone2Setpoint));
@@ -68,13 +87,13 @@ export default class PolarbearService {
         this.zoneRegister(zone, REGISTERS_V2.zone1DisplayTemp, REGISTERS_V2.zone2DisplayTemp),
       );
 
-      return (value & 0x03ff) / 10;
+      return roundHalf((value & 0x03ff) / 10);
     }
 
-    return this.readTemperature(
+    return roundHalf(await this.readTemperature(
       unitId,
       this.zoneRegister(zone, REGISTERS_V1.zone1VirtualTemp, REGISTERS_V1.zone2VirtualTemp),
-    );
+    ));
   }
 
   async setVirtualTemperature(
@@ -198,7 +217,32 @@ export default class PolarbearService {
     };
   }
 
+  async reboot(unitId: number): Promise<void> {
+    this.client.setID(unitId);
+    await this.client.writeCoil(ADMIN.reboot, true);
+  }
+
+  async setBaudrate(unitId: number, baudrate: number): Promise<void> {
+    const value = BAUDRATE_VALUES[baudrate];
+
+    if (value === undefined) {
+      throw new Error(
+        `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(
+          BAUDRATE_VALUES,
+        ).join(', ')}`,
+      );
+    }
+
+    await this.writeRegister(unitId, ADMIN.baudRate, value);
+  }
+
   private async detectVersion(unitId: number): Promise<'v1' | 'v2'> {
+    const configuredType = this.configuredUnitTypes[unitId];
+
+    if (configuredType) {
+      return configuredType === 'polarbear-v1' ? 'v1' : 'v2';
+    }
+
     const cached = this.detectedVersions.get(unitId);
 
     if (cached) {

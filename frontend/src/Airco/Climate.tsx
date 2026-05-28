@@ -152,9 +152,11 @@ export default function Climate() {
   async function addWallpanel(value: {
     name: string;
     ip: string;
-    version: WallpanelVersion;
     port: number | '';
-    terminalIds: number[];
+    modbusUnits: {
+      id: number;
+      type: WallpanelVersion;
+    }[];
   }) {
     if (!selectedZoneId || !selectedRoomId) {
       window.alert('Select a zone and room first.');
@@ -182,9 +184,10 @@ export default function Climate() {
       roomId: selectedRoomId,
       name: value.name,
       ip: value.ip,
-      type: value.version,
+      type: 'moxa',
       port: value.port === '' ? 0 : Number(value.port),
-      ids: [...value.terminalIds],
+      ids: value.modbusUnits.map((unit) => unit.id),
+      modbusUnits: value.modbusUnits,
     };
 
     try {
@@ -332,9 +335,13 @@ export default function Climate() {
     id: string;
     name?: string;
     ip: string;
-    type?: WallpanelVersion;
+    type?: string;
     port: number;
     ids: number[];
+    modbusUnits: {
+      id: number;
+      type: WallpanelVersion;
+    }[];
   }) {
     if (!selectedZoneId || !selectedRoomId) return;
 

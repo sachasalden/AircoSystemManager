@@ -16,6 +16,21 @@ type AircoState = {
   units: Map<number, AircoUnitState>;
 };
 
+function roundHalf(value: number): number {
+  return Math.round(value * 2) / 2;
+}
+
+function normalizeSnapshot(snapshot: AircoSnapshot): AircoSnapshot {
+  if (typeof snapshot.virtualTemperature !== 'number') {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    virtualTemperature: roundHalf(snapshot.virtualTemperature),
+  };
+}
+
 export type AircoSnapshotMessage = {
   zoneId: string;
   roomId: string;
@@ -35,7 +50,7 @@ export default class AircoInsightsStore {
     const unit = this.ensureUnit(airco, message.unitId);
     const zoneState = this.ensureZone(unit, message.zone);
 
-    Object.assign(zoneState, message.snapshot);
+    Object.assign(zoneState, normalizeSnapshot(message.snapshot));
     zoneState.updatedAt = message.timestamp;
 
     for (const listener of this.listeners) {

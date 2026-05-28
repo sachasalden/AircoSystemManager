@@ -141,10 +141,6 @@ export default class MqttSyncBus {
           return;
         }
 
-        if (message.sourceInstanceId === this.sourceInstanceId) {
-          return;
-        }
-
         await handlers.onSyncMessage(message as SyncMessage);
         return;
       }

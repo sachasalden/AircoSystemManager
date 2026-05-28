@@ -21,6 +21,7 @@ import createEnvironmentDevicesRoute from './routes/EnvironmentDevicesRoute';
 import WallpanelInsightsStore from './services/WallpanelInsightsStore';
 import AircoInsightsStore from './services/AircoInsightsStore';
 
+dotenv.config({ path: 'src/Airco/.env', override: true });
 dotenv.config();
 
 const app = express();
@@ -28,15 +29,26 @@ const app = express();
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
-const mongoUri: any = process.env.MONGODB_URI;
-const mqttBrokerUrl: any= process.env.MQTT_BROKER;
-const mqttTopicPrefix: any= process.env.MQTT_TOPIC_PREFIX;
+const mongoUri =
+  process.env.MONGODB_URI ||
+  'mongodb://wallpanel:wallpanel@localhost:27017/wallpanel_sync?authSource=admin';
+const mqttBrokerUrl = process.env.MQTT_BROKER || 'mqtt://192.168.55.10';
+const mqttTopicPrefix = process.env.MQTT_TOPIC_PREFIX || 'airco/sync';
 const sourceInstanceId =
   process.env.SYNC_INSTANCE_ID ||
   `${process.env.HOSTNAME || 'node'}-${process.pid}`;
 
 const wallpanelInsightsStore = new WallpanelInsightsStore();
 const aircoInsightsStore = new AircoInsightsStore();
+
+console.log('[main] mongodb', {
+  uri: mongoUri.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@'),
+  database: process.env.MONGO_DB || 'wallpanel_sync',
+  climatezonesCollection:
+    process.env.MONGO_CLIMATEZONES_COLLECTION || 'Climatezones',
+  aircoDevicesCollection:
+    process.env.MONGO_AIRCO_DEVICES_COLLECTION || 'enviormentsaircodevices',
+});
 
 const repository = new AircopanelRepository(mongoUri);
 const controller = new PolarbearController(
@@ -71,7 +83,7 @@ const syncMainLoop = new SyncMainLoop(
 
 app.use(
   '/wallpanel-insights',
-  createWallpanelInsightsRoute(controller, wallpanelInsightsStore),
+  createWallpanelInsightsRoute(controller, wallpanelInsightsStore, syncMainLoop),
 );
 app.use(
   '/airco-insights',

@@ -25,6 +25,7 @@ type Panel = TopologyRoom['panels'][number];
 type ConnectionState = {
   poller: WallpanelPoller;
   unitIds: number[];
+  unitTypes: Record<number, string>;
 };
 
 type SnapshotContext = {
@@ -87,6 +88,10 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function roundHalf(value: number): number {
+  return Math.round(value * 2) / 2;
+}
+
 function normalizeFanMode(value: number): number {
   return Number(value) === 0 ? 0 : 1;
 }
@@ -106,6 +111,47 @@ function isTimeoutError(error: unknown): boolean {
     err?.name === 'TransactionTimedOutError' ||
     String(err?.message ?? '').toLowerCase().includes('timed out')
   );
+}
+
+function isConnectionError(error: unknown): boolean {
+  const err = error as {
+    name?: string;
+    message?: string;
+    errno?: string;
+    code?: string;
+  };
+  const text = `${err?.name ?? ''} ${err?.message ?? ''} ${err?.errno ?? ''} ${err?.code ?? ''}`.toLowerCase();
+
+  return (
+    text.includes('port not open') ||
+    text.includes('not open') ||
+    text.includes('econnrefused') ||
+    text.includes('econnreset') ||
+    text.includes('epipe') ||
+    text.includes('socket closed') ||
+    text.includes('connection closed')
+  );
+}
+
+function formatError(error: unknown): string {
+  const err = error as {
+    name?: string;
+    message?: string;
+    errno?: string;
+    code?: string;
+  };
+
+  if (err?.name || err?.message || err?.errno || err?.code) {
+    return [err.name, err.message, err.errno, err.code]
+      .filter(Boolean)
+      .join(': ');
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 function isCandidateProperty(
@@ -132,6 +178,7 @@ export default class PolarbearMonitor {
   private setpointCache = new Map<string, SetpointCache>();
   private suppressedWrites = new Map<string, SuppressedWrite>();
   private startupFlagsCleared = new Set<string>();
+  private lastPollErrorLogAt = new Map<string, number>();
 
   constructor(
     private echoGuard: SyncEchoGuard,
@@ -202,31 +249,55 @@ export default class PolarbearMonitor {
       return;
     }
 
+    let conn: ConnectionState | undefined;
+
     try {
-      const conn = await this.ensurePanelConnection(panel);
+      conn = await this.ensurePanelConnection(panel);
 
       for (const unitId of panel.ids) {
-        const snapshot = await conn.poller.getSnapshot(unitId);
-
         await this.clearStartupFlags(panel.id, unitId, conn.poller);
 
+        const flags = await conn.poller.getFlags(unitId);
+
         for (const zone of ZONES) {
-          await this.handleSnapshot(
+          await this.updateSetpointCache(panel.id, unitId, zone, conn.poller);
+          await this.detectFlags(
             room,
             panel.id,
             unitId,
             zone,
-            this.toSyncSnapshot(snapshot, zone),
-            snapshot.timestamp,
+            flags,
+            conn.poller,
           );
-
-          await this.detectFlags(room, panel.id, unitId, zone, conn.poller);
         }
+
+        await this.publishSnapshot(room, panel.id, unitId, conn.poller);
       }
     } catch (error) {
-      console.error(
-        `[PolarbearMonitor] poll failed room=${room.roomName} panel=${panel.id}`,
-        error,
+      if (conn && isConnectionError(error)) {
+        conn.poller.reconnectSoon();
+      }
+
+      this.logPollError(room, panel, error);
+    }
+  }
+
+  private async publishSnapshot(
+    room: TopologyRoom,
+    panelId: string,
+    unitId: number,
+    poller: WallpanelPoller,
+  ): Promise<void> {
+    const snapshot = await poller.getSnapshot(unitId);
+
+    for (const zone of ZONES) {
+      await this.handleSnapshot(
+        room,
+        panelId,
+        unitId,
+        zone,
+        this.toSyncSnapshot(snapshot, zone),
+        snapshot.timestamp,
       );
     }
   }
@@ -285,10 +356,9 @@ export default class PolarbearMonitor {
     panelId: string,
     unitId: number,
     zone: Zone,
+    flags: number,
     poller: WallpanelPoller,
   ): Promise<void> {
-    const flags = await poller.getFlags(unitId);
-
     if (hasFlag(flags, zone, 'setpoint')) {
       await this.consumeSetpointFlag(
         room,
@@ -619,7 +689,7 @@ export default class PolarbearMonitor {
 
     return {
       setpoint: zoneSnapshot.setpoint,
-      virtualTemperature: zoneSnapshot.virtualTemp,
+      virtualTemperature: roundHalf(zoneSnapshot.virtualTemp),
       fanSpeed: zoneSnapshot.fanSpeed,
       fanMode: normalizeFanMode(zoneSnapshot.fanMode),
     };
@@ -709,13 +779,18 @@ export default class PolarbearMonitor {
         }
       }
     } catch (error) {
+      if (isConnectionError(error)) {
+        throw error;
+      }
+
       console.error(
         `[PolarbearMonitor] startup flag clear failed panel=${panelId} unit=${unitId}`,
         error,
       );
-    } finally {
-      this.startupFlagsCleared.add(key);
+      return;
     }
+
+    this.startupFlagsCleared.add(key);
   }
 
   private async safeClearFlag(
@@ -818,13 +893,20 @@ export default class PolarbearMonitor {
   }
 
   private ensurePanelConnection(panel: Panel): Promise<ConnectionState> {
-    return this.ensureConnection(panel.ip, panel.port, panel.ids);
+    const unitTypes = Object.fromEntries(
+      (panel.modbusUnits || [])
+        .filter((unit) => Number.isFinite(Number(unit.id)) && unit.type)
+        .map((unit) => [Number(unit.id), String(unit.type)]),
+    );
+
+    return this.ensureConnection(panel.ip, panel.port, panel.ids, unitTypes);
   }
 
   private async ensureConnection(
     ip: string,
     port: number,
     unitIds: number[],
+    unitTypes: Record<number, string>,
   ): Promise<ConnectionState> {
     const key = `${ip}:${port}`;
     const nextUnitIds = this.normalizeUnitIds(unitIds);
@@ -836,7 +918,7 @@ export default class PolarbearMonitor {
     const existing = this.connections.get(key);
 
     if (!existing) {
-      return this.createConnection(key, ip, port, nextUnitIds);
+      return this.createConnection(key, ip, port, nextUnitIds, unitTypes);
     }
 
     const mergedUnitIds = this.normalizeUnitIds([
@@ -844,12 +926,20 @@ export default class PolarbearMonitor {
       ...nextUnitIds,
     ]);
 
-    if (mergedUnitIds.length === existing.unitIds.length) {
+    const mergedUnitTypes = {
+      ...existing.unitTypes,
+      ...unitTypes,
+    };
+
+    if (
+      mergedUnitIds.length === existing.unitIds.length &&
+      this.sameUnitTypes(existing.unitTypes, mergedUnitTypes)
+    ) {
       return existing;
     }
 
     await existing.poller.stop();
-    return this.createConnection(key, ip, port, mergedUnitIds);
+    return this.createConnection(key, ip, port, mergedUnitIds, mergedUnitTypes);
   }
 
   private createConnection(
@@ -857,16 +947,20 @@ export default class PolarbearMonitor {
     host: string,
     port: number,
     unitIds: number[],
+    unitTypes: Record<number, string>,
   ): ConnectionState {
     const conn = {
       poller: new WallpanelPoller({
         host,
         port,
         unitIds,
+        unitTypes,
         minInterMessageGapMs: this.requestGapMs,
         timeoutMs: this.modbusTimeoutMs,
+        reconnectDelayMs: Number(process.env.MODBUS_RECONNECT_DELAY_MS || 5000),
       }),
       unitIds,
+      unitTypes,
     };
 
     this.connections.set(key, conn);
@@ -878,5 +972,44 @@ export default class PolarbearMonitor {
     return [...new Set(unitIds)]
       .filter(Number.isFinite)
       .sort((a, b) => a - b);
+  }
+
+  private sameUnitTypes(
+    left: Record<number, string>,
+    right: Record<number, string>,
+  ): boolean {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every((key) => left[Number(key)] === right[Number(key)])
+    );
+  }
+
+  private logPollError(
+    room: TopologyRoom,
+    panel: Panel,
+    error: unknown,
+  ): void {
+    const key = `${panel.ip}:${panel.port}`;
+    const now = Date.now();
+    const last = this.lastPollErrorLogAt.get(key) ?? 0;
+    const minGapMs = isConnectionError(error) ? 10000 : 2000;
+
+    if (now - last < minGapMs) {
+      return;
+    }
+
+    this.lastPollErrorLogAt.set(key, now);
+
+    const prefix = `[PolarbearMonitor] poll failed room=${room.roomName} panel=${panel.id}`;
+
+    if (isConnectionError(error)) {
+      console.warn(`${prefix}; reconnect volgt: ${formatError(error)}`);
+      return;
+    }
+
+    console.error(prefix, error);
   }
 }

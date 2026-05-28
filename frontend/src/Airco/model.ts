@@ -1,5 +1,11 @@
 export type WallpanelVersion = 'polarbear-v1' | 'polarbear-v2' | 'polarbear-v3';
 
+export type WallpanelUnit = {
+  id: number;
+  type: WallpanelVersion;
+  name?: string;
+};
+
 export type EnvironmentDevice = {
   id: string;
   name: string;
@@ -16,6 +22,7 @@ export type WallpanelDevice = {
   version?: WallpanelVersion;
   port: number;
   terminalIds?: number[];
+  modbusUnits?: WallpanelUnit[];
   zoneId?: string;
   roomId?: string;
   ids?: number[];
@@ -171,28 +178,52 @@ export function normalizeEnvironmentDevice(
 export function normalizeWallpanelDevice(
   device?: ApiWallpanelDevice,
 ): WallpanelDevice {
-  const idsSource = Array.isArray(device?.terminalIds)
-    ? device.terminalIds
-    : Array.isArray(device?.ids)
-      ? device.ids
-      : [];
+  const legacyVersion = (device?.version ||
+    device?.type ||
+    'polarbear-v1') as WallpanelVersion;
+
+  const configuredUnits = Array.isArray((device as any)?.modbusUnits)
+    ? ((device as any).modbusUnits as Array<Partial<WallpanelUnit>>)
+        .map((unit) => ({
+          id: toNumber(unit.id, NaN),
+          type: (unit.type || legacyVersion) as WallpanelVersion,
+          name: unit.name,
+        }))
+        .filter((unit) => Number.isFinite(unit.id))
+    : [];
+
+  const idsSource =
+    configuredUnits.length > 0
+      ? configuredUnits.map((unit) => unit.id)
+      : Array.isArray(device?.terminalIds)
+        ? device.terminalIds
+        : Array.isArray(device?.ids)
+          ? device.ids
+          : [];
 
   const ids = idsSource
     .map((id) => toNumber(id, NaN))
     .filter((id) => Number.isFinite(id));
 
-  const version = (device?.version ||
-    device?.type ||
-    'polarbear-v1') as WallpanelVersion;
+  const modbusUnits =
+    configuredUnits.length > 0
+      ? configuredUnits
+      : ids.map((id) => ({
+          id,
+          type: legacyVersion,
+        }));
 
   return {
     id: String(device?.id ?? ''),
     name: device?.name ?? '',
     ip: device?.ip ?? '',
-    version,
-    type: device?.type ?? version,
+    version: legacyVersion,
+    type: device?.type?.startsWith('polarbear-')
+      ? 'moxa'
+      : device?.type ?? 'moxa',
     port: toNumber(device?.port, 4001),
     terminalIds: ids,
+    modbusUnits,
     ids,
     zoneId: device?.zoneId,
     roomId: device?.roomId,

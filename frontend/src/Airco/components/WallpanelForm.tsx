@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { WallpanelVersion } from '../model';
+import type { WallpanelUnit, WallpanelVersion } from '../model';
 import {
   Field,
   FormActions,
@@ -7,14 +7,12 @@ import {
   SelectInput,
   TextInput,
 } from './ClimateFormControls';
-import TerminalIdsField from './TerminalIdsField';
 
 type WallpanelFormValue = {
   name: string;
   ip: string;
-  version: WallpanelVersion;
   port: number | '';
-  terminalIds: number[];
+  modbusUnits: WallpanelUnit[];
 };
 
 type WallpanelFormProps = {
@@ -34,52 +32,60 @@ export default function WallpanelForm({
 }: WallpanelFormProps) {
   const [name, setName] = useState(initialValue?.name ?? '');
   const [ip, setIp] = useState(initialValue?.ip ?? '');
-  const [version, setVersion] = useState<WallpanelVersion>(
-    initialValue?.version ?? 'polarbear-v1',
-  );
   const [port, setPort] = useState<number | ''>(initialValue?.port ?? 8000);
-  const [newTerminalId, setNewTerminalId] = useState('');
-  const [terminalIds, setTerminalIds] = useState<number[]>(
-    initialValue?.terminalIds ?? [],
+  const [newUnitId, setNewUnitId] = useState('');
+  const [newUnitType, setNewUnitType] =
+    useState<WallpanelVersion>('polarbear-v1');
+  const [modbusUnits, setModbusUnits] = useState<WallpanelUnit[]>(
+    initialValue?.modbusUnits ?? [],
   );
 
   useEffect(() => {
     setName(initialValue?.name ?? '');
     setIp(initialValue?.ip ?? '');
-    setVersion(initialValue?.version ?? 'polarbear-v1');
     setPort(initialValue?.port ?? 8000);
-    setNewTerminalId('');
-    setTerminalIds(initialValue?.terminalIds ?? []);
+    setNewUnitId('');
+    setNewUnitType('polarbear-v1');
+    setModbusUnits(initialValue?.modbusUnits ?? []);
   }, [initialValue]);
 
   function resetForm() {
     setName(initialValue?.name ?? '');
     setIp(initialValue?.ip ?? '');
-    setVersion(initialValue?.version ?? 'polarbear-v1');
     setPort(initialValue?.port ?? 8000);
-    setNewTerminalId('');
-    setTerminalIds(initialValue?.terminalIds ?? []);
+    setNewUnitId('');
+    setNewUnitType('polarbear-v1');
+    setModbusUnits(initialValue?.modbusUnits ?? []);
   }
 
-  function addTerminalId() {
-    if (!newTerminalId) return;
+  function addUnitIds() {
+    if (!newUnitId) return;
 
-    const idsToAdd = newTerminalId
+    const idsToAdd = newUnitId
       .split(',')
       .map((part) => Number(part.trim()))
       .filter((value) => !Number.isNaN(value));
 
-    setTerminalIds((state) => {
-      const next = new Set<number>(state);
-      idsToAdd.forEach((id) => next.add(id));
-      return Array.from(next).sort((a, b) => a - b);
-    });
+    setModbusUnits((state) =>
+      [
+        ...state,
+        ...idsToAdd
+          .filter((id) => !state.some((unit) => unit.id === id))
+          .map((id) => ({ id, type: newUnitType })),
+      ].sort((a, b) => a.id - b.id),
+    );
 
-    setNewTerminalId('');
+    setNewUnitId('');
   }
 
-  function removeTerminalId(id: number) {
-    setTerminalIds((state) => state.filter((terminalId) => terminalId !== id));
+  function removeUnitId(id: number) {
+    setModbusUnits((state) => state.filter((unit) => unit.id !== id));
+  }
+
+  function setUnitVersion(id: number, type: WallpanelVersion) {
+    setModbusUnits((state) =>
+      state.map((unit) => (unit.id === id ? { ...unit, type } : unit)),
+    );
   }
 
   return (
@@ -92,28 +98,54 @@ export default function WallpanelForm({
         <TextInput value={ip} onChange={setIp} />
       </Field>
 
-      <Field label="Polarbear Version">
-        <SelectInput
-          value={version}
-          onChange={(value) => setVersion(value as WallpanelVersion)}
-        >
-          <option value="polarbear-v1">polarbear-v1</option>
-          <option value="polarbear-v2">polarbear-v2</option>
-          <option value="polarbear-v3">polarbear-v3</option>
-        </SelectInput>
-      </Field>
-
       <Field label="Port">
         <NumberInput value={port} onChange={setPort} />
       </Field>
 
-      <TerminalIdsField
-        value={newTerminalId}
-        ids={terminalIds}
-        onInputChange={setNewTerminalId}
-        onAdd={addTerminalId}
-        onRemove={removeTerminalId}
-      />
+      <Field label="Unit IDs" span={2}>
+        <div className="unit-add-row">
+          <TextInput
+            value={newUnitId}
+            onChange={setNewUnitId}
+            placeholder="Unit ID"
+          />
+          <SelectInput
+            value={newUnitType}
+            onChange={(value) => setNewUnitType(value as WallpanelVersion)}
+          >
+            <option value="polarbear-v1">polarbear-v1</option>
+            <option value="polarbear-v3">polarbear-v3</option>
+          </SelectInput>
+          <button type="button" className="btn add-btn" onClick={addUnitIds}>
+            Add unit
+          </button>
+        </div>
+
+        <div className="unit-config-list">
+          {modbusUnits.length === 0 && <div className="empty">No unit IDs</div>}
+          {modbusUnits.map((unit) => (
+            <div className="unit-config-row" key={unit.id}>
+              <strong>Unit {unit.id}</strong>
+              <SelectInput
+                value={unit.type}
+                onChange={(value) =>
+                  setUnitVersion(unit.id, value as WallpanelVersion)
+                }
+              >
+                <option value="polarbear-v1">polarbear-v1</option>
+                <option value="polarbear-v3">polarbear-v3</option>
+              </SelectInput>
+              <button
+                type="button"
+                className="btn ghost-btn"
+                onClick={() => removeUnitId(unit.id)}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      </Field>
 
       <FormActions>
         <button
@@ -121,9 +153,8 @@ export default function WallpanelForm({
             onSubmit({
               name,
               ip,
-              version,
               port,
-              terminalIds,
+              modbusUnits,
             })
           }
           className="btn add-btn"

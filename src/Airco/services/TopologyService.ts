@@ -86,6 +86,14 @@ export default class TopologyService {
           ip: panel.ip,
           port: panel.port,
           ids: this.normalizeIds(panel.ids),
+          modbusUnits: Array.isArray(panel.modbusUnits)
+            ? panel.modbusUnits.map((unit) => ({
+                id: Number(unit.id),
+                name: unit.name,
+                type: unit.type,
+                zones: unit.zones,
+              }))
+            : undefined,
           type: panel.type,
         })),
       aircos: aircos

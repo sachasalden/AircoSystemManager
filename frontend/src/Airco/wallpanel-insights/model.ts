@@ -1,4 +1,4 @@
-  import { type Dispatch, type SetStateAction } from 'react';
+import { type Dispatch, type SetStateAction } from 'react';
 
 export type InsightZone = {
   id: string;
@@ -50,6 +50,21 @@ export type InsightResponse = {
   panels: InsightPanel[];
 };
 
+export type PolarbearLoopStatus = {
+  paused: boolean;
+  running: boolean;
+  queuedAircoMessages?: number;
+};
+
 export function valueOrDash(value?: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : '—';
+}
+
+export function halfStepOrDash(value?: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  const rounded = Math.round(value * 2) / 2;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }

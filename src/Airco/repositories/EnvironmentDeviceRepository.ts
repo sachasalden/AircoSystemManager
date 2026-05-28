@@ -12,8 +12,9 @@ export type EnvironmentDevice = {
 
 export class EnvironmentDeviceRepository {
   private client: MongoClient;
-  private readonly dbName = 'lavie';
-  private readonly collectionName = 'enviromentDevices';
+  private readonly dbName = process.env.MONGO_DB || 'wallpanel_sync';
+  private readonly collectionName =
+    process.env.MONGO_AIRCO_DEVICES_COLLECTION || 'enviormentsaircodevices';
 
   constructor(mongoUri: string) {
     this.client = new MongoClient(mongoUri);

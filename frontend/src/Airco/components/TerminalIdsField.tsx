@@ -16,7 +16,7 @@ export default function TerminalIdsField({
   onRemove,
 }: TerminalIdsFieldProps) {
   return (
-    <Field label="Terminal IDs" span={2}>
+    <Field label="Unit IDs" span={2}>
       <div style={{ display: 'flex', gap: 8 }}>
         <TextInput
           value={value}
@@ -36,7 +36,7 @@ export default function TerminalIdsField({
           marginTop: 8,
         }}
       >
-        {ids.length === 0 && <div className="empty">No terminal IDs</div>}
+        {ids.length === 0 && <div className="empty">No unit IDs</div>}
         {ids.map((terminalId) => (
           <button
             key={terminalId}
@@ -44,7 +44,7 @@ export default function TerminalIdsField({
             className="btn ghost-btn"
             onClick={() => onRemove(terminalId)}
           >
-            Terminal {terminalId} ✕
+            Unit {terminalId} ✕
           </button>
         ))}
       </div>

@@ -23,6 +23,12 @@ function formatNumber(value: number | undefined, fallback = '-'): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function roundHalf(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(value * 2) / 2
+    : value;
+}
+
 function commandOverrideKey(
   aircoId: string,
   zone: 1 | 2,
@@ -123,7 +129,7 @@ export default function AircoInsights({
     selectedAirco?.setTemperature ??
     minSetpoint;
 
-  const virtualTemperature = selectedZoneInsight?.virtualTemperature;
+  const virtualTemperature = roundHalf(selectedZoneInsight?.virtualTemperature);
 
   async function fetchInsights() {
     if (!selectedZoneId || !selectedRoomId) return;

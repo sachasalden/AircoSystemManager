@@ -20,8 +20,10 @@ export interface PollerOptions {
   host: string;
   port: number;
   unitIds: number[];
+  unitTypes?: Record<number, string>;
   minInterMessageGapMs?: number;
   timeoutMs?: number;
+  reconnectDelayMs?: number;
 }
 
 export default class WallpanelPoller {
@@ -30,6 +32,7 @@ export default class WallpanelPoller {
   private readonly service: PolarbearService;
   private connected = false;
   private requestQueue: Promise<unknown> = Promise.resolve();
+  private lastReconnectAttemptAt = 0;
 
   constructor(private readonly options: PollerOptions) {
     this.unitIds = this.normalizeUnitIds(options.unitIds);
@@ -51,12 +54,17 @@ export default class WallpanelPoller {
       options.minInterMessageGapMs ?? 30,
     );
 
-    this.service = new PolarbearService(this.client);
+    this.service = new PolarbearService(this.client, options.unitTypes);
   }
 
   async stop(): Promise<void> {
     await this.client.disconnect();
     this.connected = false;
+  }
+
+  reconnectSoon(): void {
+    this.connected = false;
+    this.client.markDisconnected();
   }
 
   async getSnapshot(unitId: number): Promise<FullSnapshot> {
@@ -152,13 +160,34 @@ export default class WallpanelPoller {
 
   private async run<T>(unitId: number, task: () => Promise<T>): Promise<T> {
     this.assertUnitConfigured(unitId);
-    await this.ensureConnected();
 
-    return this.enqueue(task);
+    return this.enqueue(async () => {
+      await this.ensureConnected();
+
+      try {
+        return await task();
+      } catch (error) {
+        if (this.isConnectionError(error)) {
+          this.connected = false;
+          this.client.markDisconnected();
+        }
+
+        throw error;
+      }
+    });
   }
 
   private async ensureConnected(): Promise<void> {
     if (!this.connected) {
+      const reconnectDelayMs = this.options.reconnectDelayMs ?? 5000;
+      const waitMs =
+        reconnectDelayMs - (Date.now() - this.lastReconnectAttemptAt);
+
+      if (this.lastReconnectAttemptAt > 0 && waitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+
+      this.lastReconnectAttemptAt = Date.now();
       await this.client.connect(this.options.host, this.options.port);
       this.connected = true;
     }
@@ -185,5 +214,20 @@ export default class WallpanelPoller {
     );
 
     return run;
+  }
+
+  private isConnectionError(error: unknown): boolean {
+    const err = error as { name?: string; message?: string; errno?: string; code?: string };
+    const text = `${err?.name ?? ''} ${err?.message ?? ''} ${err?.errno ?? ''} ${err?.code ?? ''}`.toLowerCase();
+
+    return (
+      text.includes('port not open') ||
+      text.includes('not open') ||
+      text.includes('econnrefused') ||
+      text.includes('econnreset') ||
+      text.includes('epipe') ||
+      text.includes('socket closed') ||
+      text.includes('connection closed')
+    );
   }
 }

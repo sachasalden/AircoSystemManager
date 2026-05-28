@@ -22,6 +22,10 @@ type AircoSnapshotContext = {
   timestamp: string;
 };
 
+function roundHalf(value: number): number {
+  return Math.round(value * 2) / 2;
+}
+
 export default class AircoMonitor {
   private readonly lastState = new Map<string, number>();
 
@@ -348,7 +352,9 @@ export default class AircoMonitor {
   ): Promise<Snapshot> {
     return {
       setpoint: await adapter.getSetpoint(unitId, zone),
-      virtualTemperature: await adapter.getVirtualTemperature(unitId, zone),
+      virtualTemperature: roundHalf(
+        await adapter.getVirtualTemperature(unitId, zone),
+      ),
       fanSpeed: await adapter.getFanSpeed(unitId, zone),
       fanMode: await adapter.getFanMode(unitId, zone),
     };

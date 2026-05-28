@@ -11,6 +11,12 @@ export type PanelDevice = {
   port: number;
   ids: number[];
   terminalIds?: number[];
+  modbusUnits?: Array<{
+    id: number;
+    name?: string;
+    type?: string;
+    zones?: number[];
+  }>;
 };
 
 export type Device = PanelDevice;
@@ -57,7 +63,8 @@ type ZoneDocument = {
   rooms: Room[];
 };
 
-const DEFAULT_PANEL_TYPE = 'polarbear-v1';
+const DEFAULT_PANEL_TYPE = 'moxa';
+const DEFAULT_UNIT_TYPE = 'polarbear-v1';
 const DEFAULT_PANEL_PORT = 4001;
 
 const DEFAULT_AIRCO_DEVICE_TYPE = 'FC-500PC/FC-1100PC';
@@ -97,8 +104,9 @@ const FC500_PC_AIRCO_DEFAULTS: AircoDefaults = {
 
 export class AircopanelRepository {
   private client: MongoClient;
-  private readonly dbName = 'lavie';
-  private readonly collectionName = 'enviromentZones';
+  private readonly dbName = process.env.MONGO_DB || 'wallpanel_sync';
+  private readonly collectionName =
+    process.env.MONGO_CLIMATEZONES_COLLECTION || 'Climatezones';
 
   constructor(mongoUri: string) {
     this.client = new MongoClient(mongoUri);
@@ -140,18 +148,56 @@ export class AircopanelRepository {
   }
 
   private normalizePanelDevice(device: Partial<PanelDevice>): PanelDevice {
+    const legacyUnitType =
+      device.version && device.version.startsWith('polarbear-')
+        ? device.version
+        : device.type && device.type.startsWith('polarbear-')
+          ? device.type
+          : DEFAULT_UNIT_TYPE;
+
+    const modbusUnits = Array.isArray(device.modbusUnits)
+      ? device.modbusUnits
+          .map((unit) => ({
+            id: this.toNumber(unit.id, NaN),
+            name: unit.name ?? `Unit ${unit.id}`,
+            type: unit.type ?? legacyUnitType,
+            zones: Array.isArray(unit.zones) ? unit.zones.map(Number) : [1],
+          }))
+          .filter((unit) => Number.isFinite(unit.id))
+      : Array.isArray(device.ids)
+        ? device.ids
+            .map((id) => this.toNumber(id, NaN))
+            .filter((id) => Number.isFinite(id))
+            .map((id) => ({
+              id,
+              name: `Unit ${id}`,
+              type: legacyUnitType,
+              zones: [1],
+            }))
+        : Array.isArray(device.terminalIds)
+          ? device.terminalIds
+              .map((id) => this.toNumber(id, NaN))
+              .filter((id) => Number.isFinite(id))
+              .map((id) => ({
+                id,
+                name: `Unit ${id}`,
+                type: legacyUnitType,
+                zones: [1],
+              }))
+        : [];
+
     return {
       id: device.id || uuidv4(),
       name: device.name ?? '',
       ip: device.ip ?? '',
-      type: device.type ?? DEFAULT_PANEL_TYPE,
+      type: device.type?.startsWith('polarbear-')
+        ? DEFAULT_PANEL_TYPE
+        : device.type ?? DEFAULT_PANEL_TYPE,
       model: device.model ?? '',
       port: this.toNumber(device.port, DEFAULT_PANEL_PORT),
-      ids: Array.isArray(device.ids)
-        ? device.ids
-            .map((id) => this.toNumber(id, NaN))
-            .filter((id) => Number.isFinite(id))
-        : [],
+      ids: modbusUnits.map((unit) => unit.id),
+      terminalIds: modbusUnits.map((unit) => unit.id),
+      modbusUnits,
     };
   }
 

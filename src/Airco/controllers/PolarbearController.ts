@@ -28,7 +28,7 @@ export default class PolarbearController {
   }
 
   handleReconnect(): void {
-    this.client.handleReconnect();
+    this.client.markDisconnected();
   }
 
   async setTemperature(
@@ -89,6 +89,40 @@ export default class PolarbearController {
 
   async setFanMode(unitId: number, zone: 1 | 2, mode: number): Promise<void> {
     await this.service.setFanMode(unitId, zone, mode);
+  }
+
+  async rebootPolarbears(panelId: string, unitIds?: number[]): Promise<number[]> {
+    const { panel, targetUnitIds } = await this.getPanelAdminTarget(
+      panelId,
+      unitIds,
+    );
+
+    await this.withPanelConnection(panel.ip, panel.port, async () => {
+      for (const unitId of targetUnitIds) {
+        await this.service.reboot(unitId);
+      }
+    });
+
+    return targetUnitIds;
+  }
+
+  async setPolarbearBaudrate(
+    panelId: string,
+    baudrate: number,
+    unitIds?: number[],
+  ): Promise<number[]> {
+    const { panel, targetUnitIds } = await this.getPanelAdminTarget(
+      panelId,
+      unitIds,
+    );
+
+    await this.withPanelConnection(panel.ip, panel.port, async () => {
+      for (const unitId of targetUnitIds) {
+        await this.service.setBaudrate(unitId, baudrate);
+      }
+    });
+
+    return targetUnitIds;
   }
 
   async getRoomWallpanelInsights(zoneId: string, roomId: string) {
@@ -181,5 +215,55 @@ export default class PolarbearController {
       generatedAt: new Date().toISOString(),
       panels: results,
     };
+  }
+
+  private async getPanelAdminTarget(
+    panelId: string,
+    unitIds?: number[],
+  ): Promise<{ panel: Device; targetUnitIds: number[] }> {
+    const panel = await this.repository.getDeviceById(panelId);
+
+    if (!panel) {
+      throw new Error('Wallpanel not found');
+    }
+
+    const configuredUnitIds = this.normalizeUnitIds(panel.ids);
+    const requestedUnitIds = this.normalizeUnitIds(unitIds);
+    const targetUnitIds =
+      requestedUnitIds.length > 0 ? requestedUnitIds : configuredUnitIds;
+
+    if (!targetUnitIds.length) {
+      throw new Error('No terminal IDs configured for this wallpanel');
+    }
+
+    for (const unitId of targetUnitIds) {
+      if (!configuredUnitIds.includes(unitId)) {
+        throw new Error(
+          `Terminal ${unitId} is not configured on wallpanel ${panelId}`,
+        );
+      }
+    }
+
+    return { panel, targetUnitIds };
+  }
+
+  private async withPanelConnection<T>(
+    host: string,
+    port: number,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    await this.client.connect(host, port);
+
+    try {
+      return await task();
+    } finally {
+      await this.client.disconnect();
+    }
+  }
+
+  private normalizeUnitIds(unitIds?: unknown[]): number[] {
+    return [...new Set((unitIds || []).map(Number))]
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
   }
 }

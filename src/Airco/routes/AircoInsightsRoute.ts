@@ -18,6 +18,10 @@ const COMMAND_PROPERTIES: readonly AircoCommandProperty[] = [
   'fanMode',
 ];
 
+function roundHalf(value: number | undefined): number | undefined {
+  return typeof value === 'number' ? Math.round(value * 2) / 2 : value;
+}
+
 export default function createAircoInsightsRoute(
   repository: AircopanelRepository,
   insightsStore: AircoInsightsStore,
@@ -86,7 +90,7 @@ export default function createAircoInsightsRoute(
           zone,
           status: 'ok' as const,
           setpoint: zoneState.setpoint,
-          virtualTemperature: zoneState.virtualTemperature,
+          virtualTemperature: roundHalf(zoneState.virtualTemperature),
           fanSpeed: zoneState.fanSpeed,
           fanMode: zoneState.fanMode,
           updatedAt: zoneState.updatedAt,

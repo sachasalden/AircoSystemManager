@@ -1,5 +1,5 @@
 import type { InsightUnit } from './model';
-import { valueOrDash } from './model';
+import { halfStepOrDash, valueOrDash } from './model';
 
 type WallpanelInsightUnitCardProps = {
   unit: InsightUnit;
@@ -22,7 +22,7 @@ export default function WallpanelInsightUnitCard({
             ) : (
               <>
                 <p>Setpoint: {valueOrDash(zone.setpoint)}°</p>
-                <p>Virtual temp: {valueOrDash(zone.virtualTemperature)}°</p>
+                <p>Virtual temp: {halfStepOrDash(zone.virtualTemperature)}°</p>
                 <p>Fan speed: {valueOrDash(zone.fanSpeed)}</p>
                 <p>Fan mode: {valueOrDash(zone.fanMode)}</p>
               </>
