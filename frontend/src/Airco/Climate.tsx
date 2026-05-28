@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import AircoInsights from './AircoInsights';
 import WallpanelInsights from './WallpanelInsights';
+import { API_BASE } from './api';
 import './climate.css';
 import AirconditionerCard from './components/AirconditionerCard';
 import AirconditionerForm from './components/AirconditionerForm';
@@ -51,9 +52,9 @@ export default function Climate() {
       try {
         const [zonesRes, environmentDevicesRes, adapterTypesRes] =
           await Promise.all([
-            axios.get('http://localhost:3000/devices'),
-            axios.get('http://localhost:3000/environment-devices'),
-            axios.get('http://localhost:3000/airco-adapter-types'),
+            axios.get(`${API_BASE}/devices`),
+            axios.get(`${API_BASE}/environment-devices`),
+            axios.get(`${API_BASE}/airco-adapter-types`),
           ]);
 
         const rawEnvironmentDevices = Array.isArray(environmentDevicesRes.data)
@@ -105,7 +106,7 @@ export default function Climate() {
 
     try {
       const res = await axios.post(
-        'http://localhost:3000/environment-devices',
+        `${API_BASE}/environment-devices`,
         {
           name: value.name,
           type: value.type,
@@ -139,7 +140,7 @@ export default function Climate() {
     }
 
     try {
-      await axios.delete(`http://localhost:3000/environment-devices/${id}`);
+      await axios.delete(`${API_BASE}/environment-devices/${id}`);
 
       const remaining = environmentDevices.filter((device) => device.id !== id);
       setEnvironmentDevices(remaining);
@@ -191,7 +192,7 @@ export default function Climate() {
     };
 
     try {
-      const res = await axios.post('http://localhost:3000/devices', device);
+      const res = await axios.post(`${API_BASE}/devices`, device);
       const normalizedPanel = normalizeWallpanelDevice(res.data);
 
       setZones((prevZones) =>
@@ -298,7 +299,7 @@ export default function Climate() {
 
     try {
       const res = await axios.post(
-        'http://localhost:3000/airco-devices',
+        `${API_BASE}/airco-devices`,
         device,
       );
       const normalizedAirco = normalizeAirconditionerDevice(res.data);
@@ -347,7 +348,7 @@ export default function Climate() {
 
     try {
       const res = await axios.put(
-        `http://localhost:3000/devices/${updated.id}`,
+        `${API_BASE}/devices/${updated.id}`,
         updated,
       );
 
@@ -383,7 +384,7 @@ export default function Climate() {
 
     try {
       const res = await axios.put(
-        `http://localhost:3000/airco-devices/${updated.id}`,
+        `${API_BASE}/airco-devices/${updated.id}`,
         updated,
       );
 
@@ -418,7 +419,7 @@ export default function Climate() {
     if (!panelToDelete || !selectedZoneId || !selectedRoomId) return;
 
     try {
-      await axios.delete(`http://localhost:3000/devices/${panelToDelete}`);
+      await axios.delete(`${API_BASE}/devices/${panelToDelete}`);
 
       setZones((prevZones) =>
         prevZones.map((zone) =>
@@ -453,7 +454,7 @@ export default function Climate() {
 
     try {
       await axios.delete(
-        `http://localhost:3000/airco-devices/${aircoToDelete}`,
+        `${API_BASE}/airco-devices/${aircoToDelete}`,
       );
 
       setZones((prevZones) =>

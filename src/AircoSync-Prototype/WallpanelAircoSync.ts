@@ -10,6 +10,11 @@ import {
   type ServerResponse,
 } from "node:http";
 import { URL } from "node:url";
+import { randomUUID } from "node:crypto";
+
+/* -------------------------------------------------------------------------- */
+/* models/types.ts */
+/* -------------------------------------------------------------------------- */
 
 type Zone = 1 | 2;
 type FlagType = "setpoint" | "fanMode";
@@ -193,6 +198,28 @@ type SettingsPatch = Partial<{
   }>;
 }>;
 
+type PolarbearAdminController = {
+  getPolarbearLoopStatus: () => { paused: boolean };
+  pausePolarbearLoop: () => Promise<void>;
+  resumePolarbearLoop: () => Promise<void>;
+  rebootPolarbears: (unitIds: number[]) => Promise<void>;
+  setPolarbearBaudrate: (unitIds: number[], baudrate: number) => Promise<void>;
+};
+
+type PolarbearMqttHandlers = {
+  onVirtualTemperature: (value: number) => void;
+  onSetTemperatureCommand: (value: number) => void;
+  onFanModeCommand: (value: number) => void;
+  onFanSpeedCommand: (value: number) => void;
+  onSetTemperatureState: (value: number) => void;
+  onFanModeState: (value: number) => void;
+  onFanSpeedState: (value: number) => void;
+};
+
+/* -------------------------------------------------------------------------- */
+/* config/runtime.ts */
+/* -------------------------------------------------------------------------- */
+
 const CONFIG = {
   runMode: "both" as "both" | "polarbearPublisher" | "aircoBridge",
 
@@ -324,6 +351,10 @@ const TOPICS = {
   virtualTempState: `${CONFIG.mqtt.topicBase}/virtualTemp/state`,
 };
 
+/* -------------------------------------------------------------------------- */
+/* utils/helpers.ts */
+/* -------------------------------------------------------------------------- */
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -447,7 +478,7 @@ const toZone = (value: unknown): Zone | null => {
   return parsed === 1 || parsed === 2 ? parsed : null;
 };
 
-const toZones = (values: unknown, fallback: Zone[] = [1]): Zone[] => {
+export const toZones = (values: unknown, fallback: Zone[] = [1]): Zone[] => {
   if (!Array.isArray(values)) {
     return fallback;
   }
@@ -520,7 +551,7 @@ const applyRuntimeSettings = (settings: RuntimeSettings): void => {
 };
 
 /* -------------------------------------------------------------------------- */
-/* MONGODB CONFIG STORE                                                       */
+/* services/ConfigStore.ts */
 /* -------------------------------------------------------------------------- */
 
 class ConfigStore {
@@ -668,12 +699,236 @@ class ConfigStore {
     return next;
   }
 
+  async getFrontendZones(): Promise<unknown[]> {
+    const database = this.getDatabase();
+    const zones = await database
+      .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
+      .find({})
+      .toArray();
+
+    return zones.map((zone) => ({
+      id: zone._id.toHexString(),
+      _id: zone._id.toHexString(),
+      name: zone.name,
+      rooms: (zone.rooms ?? []).map((room) => ({
+        id: room.id,
+        name: room.name ?? "",
+        aircopanels: (room.aircopanels ?? []).map((panel) => ({
+          ...panel,
+          zoneId: zone._id.toHexString(),
+          roomId: room.id,
+          port: toPositiveInt(panel.port, CONFIG.wallpanel.port),
+          ids: (panel.ids ?? []).map((id) => toPositiveInt(id, 0)).filter(Boolean),
+          modbusUnits: normalizeModbusUnits(panel),
+        })),
+        airconditioners: (room.airconditioners ?? []).map((airco) => ({
+          ...airco,
+          zoneId: zone._id.toHexString(),
+          roomId: room.id,
+        })),
+      })),
+    }));
+  }
+
+  async getEnvironmentDevices(): Promise<unknown[]> {
+    return this.getDatabase()
+      .collection<EnvironmentAircoDeviceDocument>(CONFIG.database.aircoDevicesCollection)
+      .find({})
+      .toArray();
+  }
+
+  async addEnvironmentDevice(device: Partial<EnvironmentAircoDeviceDocument>): Promise<unknown> {
+    const next = {
+      id: String(device.id ?? randomUUID()),
+      name: String(device.name ?? "New"),
+      type: String(device.type ?? "HeinAndHopmanIpSystem"),
+      ip: String(device.ip ?? ""),
+      port: String(device.port ?? "502"),
+      bidirectional: device.bidirectional !== false,
+    };
+
+    await this.getDatabase()
+      .collection(CONFIG.database.aircoDevicesCollection)
+      .insertOne(next);
+
+    return next;
+  }
+
+  async updateEnvironmentDevice(
+    id: string,
+    patch: Partial<EnvironmentAircoDeviceDocument>,
+  ): Promise<unknown> {
+    await this.getDatabase()
+      .collection(CONFIG.database.aircoDevicesCollection)
+      .updateOne(
+        { id },
+        {
+          $set: {
+            name: patch.name,
+            type: patch.type,
+            ip: patch.ip,
+            port: String(patch.port ?? ""),
+            bidirectional: patch.bidirectional,
+          },
+        },
+      );
+
+    return this.getDatabase()
+      .collection(CONFIG.database.aircoDevicesCollection)
+      .findOne({ id });
+  }
+
+  async deleteEnvironmentDevice(id: string): Promise<void> {
+    await this.getDatabase()
+      .collection(CONFIG.database.aircoDevicesCollection)
+      .deleteOne({ id });
+  }
+
+  async addPanel(panel: Partial<DbAircoPanel> & { zoneId: string; roomId: string }): Promise<unknown> {
+    const next = this.normalizePanelForDb(panel);
+
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { _id: new ObjectId(panel.zoneId), "rooms.id": panel.roomId },
+        { $push: { "rooms.$.aircopanels": next } },
+      );
+
+    return { ...next, zoneId: panel.zoneId, roomId: panel.roomId };
+  }
+
+  async updatePanel(id: string, panel: Partial<DbAircoPanel>): Promise<unknown> {
+    const zones = await this.getDatabase()
+      .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
+      .find({ "rooms.aircopanels.id": id })
+      .toArray();
+    const zone = zones[0];
+    const room = zone?.rooms?.find((candidate) =>
+      candidate.aircopanels?.some((item) => item.id === id),
+    );
+
+    if (!zone || !room) {
+      throw new Error(`aircopanel niet gevonden: ${id}`);
+    }
+
+    const next = this.normalizePanelForDb({ ...panel, id });
+
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { _id: zone._id },
+        { $set: { "rooms.$[room].aircopanels.$[panel]": next } },
+        { arrayFilters: [{ "room.id": room.id }, { "panel.id": id }] },
+      );
+
+    return { ...next, zoneId: zone._id.toHexString(), roomId: room.id };
+  }
+
+  async deletePanel(id: string): Promise<void> {
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { "rooms.aircopanels.id": id },
+        { $pull: { "rooms.$[].aircopanels": { id } } },
+      );
+  }
+
+  async addAirconditioner(
+    airco: Partial<DbAirconditioner> & { zoneId: string; roomId: string },
+  ): Promise<unknown> {
+    const next = this.normalizeAirconditionerForDb(airco);
+
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { _id: new ObjectId(airco.zoneId), "rooms.id": airco.roomId },
+        { $push: { "rooms.$.airconditioners": next } },
+      );
+
+    return { ...next, zoneId: airco.zoneId, roomId: airco.roomId };
+  }
+
+  async updateAirconditioner(id: string, airco: Partial<DbAirconditioner>): Promise<unknown> {
+    const zones = await this.getDatabase()
+      .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
+      .find({ "rooms.airconditioners.id": id })
+      .toArray();
+    const zone = zones[0];
+    const room = zone?.rooms?.find((candidate) =>
+      candidate.airconditioners?.some((item) => item.id === id),
+    );
+
+    if (!zone || !room) {
+      throw new Error(`airconditioner niet gevonden: ${id}`);
+    }
+
+    const next = this.normalizeAirconditionerForDb({ ...airco, id });
+
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { _id: zone._id },
+        { $set: { "rooms.$[room].airconditioners.$[airco]": next } },
+        { arrayFilters: [{ "room.id": room.id }, { "airco.id": id }] },
+      );
+
+    return { ...next, zoneId: zone._id.toHexString(), roomId: room.id };
+  }
+
+  async deleteAirconditioner(id: string): Promise<void> {
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { "rooms.airconditioners.id": id },
+        { $pull: { "rooms.$[].airconditioners": { id } } },
+      );
+  }
+
   private getDatabase(): Db {
     if (!this.database) {
       throw new Error("mongodb is niet verbonden");
     }
 
     return this.database;
+  }
+
+  private normalizePanelForDb(panel: Partial<DbAircoPanel>): DbAircoPanel {
+    const id = String(panel.id ?? randomUUID());
+    const modbusUnits = normalizeModbusUnits({
+      id,
+      name: panel.name,
+      ip: String(panel.ip ?? ""),
+      type: panel.type,
+      port: panel.port ?? CONFIG.wallpanel.port,
+      ids: panel.ids,
+      modbusUnits: panel.modbusUnits,
+    });
+
+    return {
+      id,
+      name: String(panel.name ?? ""),
+      ip: String(panel.ip ?? ""),
+      type: String(panel.type ?? modbusUnits[0]?.type ?? "moxa"),
+      model: String(panel.model ?? ""),
+      port: toPositiveInt(panel.port, CONFIG.wallpanel.port),
+      ids: modbusUnits.map((unit) => unit.id),
+      modbusUnits,
+    };
+  }
+
+  private normalizeAirconditionerForDb(airco: Partial<DbAirconditioner>): DbAirconditioner {
+    return {
+      ...(airco as DbAirconditioner),
+      id: String(airco.id ?? randomUUID()),
+      name: String(airco.name ?? ""),
+      deviceType: String(airco.deviceType ?? CONFIG.airco.model),
+      data: {
+        deviceId: String(airco.data?.deviceId ?? ""),
+        type: String(airco.data?.type ?? "HeinAndHopmanIpSystem"),
+        deviceTerminalId: String(airco.data?.deviceTerminalId ?? CONFIG.airco.unitId),
+        ...airco.data,
+      },
+    };
   }
 
   private findConfigRoom(climatezone: ClimatezoneDocument): DbRoom {
@@ -734,7 +989,7 @@ class ConfigStore {
 }
 
 /* -------------------------------------------------------------------------- */
-/* WALLPANEL MODBUS                                                           */
+/* services/ModbusClient.ts */
 /* -------------------------------------------------------------------------- */
 
 class ModbusClient {
@@ -832,6 +1087,10 @@ class ModbusClient {
     }
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* services/Polarbear.ts */
+/* -------------------------------------------------------------------------- */
 
 class Polarbear {
   private client: ModbusClient;
@@ -994,7 +1253,7 @@ class Polarbear {
 }
 
 /* -------------------------------------------------------------------------- */
-/* HOPMANN AIRCO ADAPTER - PER REQUEST CONNECTIE                              */
+/* services/HopmannAdapter.ts */
 /* -------------------------------------------------------------------------- */
 
 class HopmannAdapter {
@@ -1204,7 +1463,7 @@ class HopmannAdapter {
 }
 
 /* -------------------------------------------------------------------------- */
-/* AIRCO MQTT BRIDGE                                                          */
+/* services/AircoMqttBridge.ts */
 /* -------------------------------------------------------------------------- */
 
 class AircoMqttBridge {
@@ -1381,16 +1640,8 @@ class AircoMqttBridge {
 }
 
 /* -------------------------------------------------------------------------- */
-/* HTTP CONTROL FRONTEND                                                      */
+/* controllers/ControlHttpServer.ts */
 /* -------------------------------------------------------------------------- */
-
-type PolarbearAdminController = {
-  getPolarbearLoopStatus: () => { paused: boolean };
-  pausePolarbearLoop: () => Promise<void>;
-  resumePolarbearLoop: () => Promise<void>;
-  rebootPolarbears: (unitIds: number[]) => Promise<void>;
-  setPolarbearBaudrate: (unitIds: number[], baudrate: number) => Promise<void>;
-};
 
 class ControlHttpServer {
   private server?: Server;
@@ -1411,7 +1662,11 @@ class ControlHttpServer {
     this.server = createServer((request, response) => {
       this.handleRequest(request, response).catch((error) => {
         log(`control http error: ${formatError(error)}`);
-        this.sendJson(response, 500, { ok: false, error: formatError(error) });
+        this.sendJson(response, 500, {
+          ok: false,
+          error: formatError(error),
+          message: formatError(error),
+        });
       });
     });
 
@@ -1513,7 +1768,10 @@ class ControlHttpServer {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
     if (request.method === "GET" && url.pathname === "/") {
-      this.sendHtml(response, this.renderFrontend());
+      this.sendJson(response, 200, {
+        ok: true,
+        message: "WallpanelAircoSync backend actief. Gebruik de React frontend uit frontend/.",
+      });
       return;
     }
 
@@ -1534,6 +1792,213 @@ class ControlHttpServer {
         ok: true,
         settings: await this.configStore.getSettings(),
       });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/devices") {
+      this.sendJson(response, 200, await this.configStore.getFrontendZones());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/environment-devices") {
+      this.sendJson(response, 200, await this.configStore.getEnvironmentDevices());
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/environment-devices") {
+      this.sendJson(
+        response,
+        201,
+        await this.configStore.addEnvironmentDevice(
+          await this.readJsonRequest<Partial<EnvironmentAircoDeviceDocument>>(request),
+        ),
+      );
+      return;
+    }
+
+    const environmentDeviceMatch = url.pathname.match(/^\/environment-devices\/([^/]+)$/);
+    if (environmentDeviceMatch && request.method === "PUT") {
+      this.sendJson(
+        response,
+        200,
+        await this.configStore.updateEnvironmentDevice(
+          decodeURIComponent(environmentDeviceMatch[1]),
+          await this.readJsonRequest<Partial<EnvironmentAircoDeviceDocument>>(request),
+        ),
+      );
+      return;
+    }
+
+    if (environmentDeviceMatch && request.method === "DELETE") {
+      await this.configStore.deleteEnvironmentDevice(
+        decodeURIComponent(environmentDeviceMatch[1]),
+      );
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/airco-adapter-types") {
+      this.sendJson(response, 200, [{ type: "HeinAndHopmanIpSystem" }]);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/devices") {
+      this.sendJson(
+        response,
+        201,
+        await this.configStore.addPanel(
+          await this.readJsonRequest<Partial<DbAircoPanel> & { zoneId: string; roomId: string }>(request),
+        ),
+      );
+      return;
+    }
+
+    const panelMatch = url.pathname.match(/^\/devices\/([^/]+)$/);
+    if (panelMatch && request.method === "PUT") {
+      this.sendJson(
+        response,
+        200,
+        await this.configStore.updatePanel(
+          decodeURIComponent(panelMatch[1]),
+          await this.readJsonRequest<Partial<DbAircoPanel>>(request),
+        ),
+      );
+      return;
+    }
+
+    if (panelMatch && request.method === "DELETE") {
+      await this.configStore.deletePanel(decodeURIComponent(panelMatch[1]));
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/airco-devices") {
+      this.sendJson(
+        response,
+        201,
+        await this.configStore.addAirconditioner(
+          await this.readJsonRequest<Partial<DbAirconditioner> & { zoneId: string; roomId: string }>(request),
+        ),
+      );
+      return;
+    }
+
+    const aircoDeviceMatch = url.pathname.match(/^\/airco-devices\/([^/]+)$/);
+    if (aircoDeviceMatch && request.method === "PUT") {
+      this.sendJson(
+        response,
+        200,
+        await this.configStore.updateAirconditioner(
+          decodeURIComponent(aircoDeviceMatch[1]),
+          await this.readJsonRequest<Partial<DbAirconditioner>>(request),
+        ),
+      );
+      return;
+    }
+
+    if (aircoDeviceMatch && request.method === "DELETE") {
+      await this.configStore.deleteAirconditioner(decodeURIComponent(aircoDeviceMatch[1]));
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    const wallpanelInsightsMatch = url.pathname.match(
+      /^\/wallpanel-insights\/rooms\/([^/]+)\/([^/]+)$/,
+    );
+    if (wallpanelInsightsMatch && request.method === "GET") {
+      this.sendJson(response, 200, await this.wallpanelInsightsResponse());
+      return;
+    }
+
+    const wallpanelStreamMatch = url.pathname.match(
+      /^\/wallpanel-insights\/stream\/rooms\/([^/]+)\/([^/]+)$/,
+    );
+    if (wallpanelStreamMatch && request.method === "GET") {
+      await this.streamInsights(response, "insights", () => this.wallpanelInsightsResponse());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/wallpanel-insights/sync/status") {
+      this.sendJson(response, 200, {
+        polarbearLoop: {
+          ...(this.polarbearAdmin?.getPolarbearLoopStatus() ?? { paused: false }),
+          running: !(this.polarbearAdmin?.getPolarbearLoopStatus().paused ?? false),
+        },
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/wallpanel-insights/sync/pause") {
+      const polarbearAdmin = this.getPolarbearAdmin();
+      await polarbearAdmin.pausePolarbearLoop();
+      this.sendJson(response, 200, {
+        polarbearLoop: { ...polarbearAdmin.getPolarbearLoopStatus(), running: false },
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/wallpanel-insights/sync/resume") {
+      const polarbearAdmin = this.getPolarbearAdmin();
+      await polarbearAdmin.resumePolarbearLoop();
+      this.sendJson(response, 200, {
+        polarbearLoop: { ...polarbearAdmin.getPolarbearLoopStatus(), running: true },
+      });
+      return;
+    }
+
+    const wallpanelRebootMatch = url.pathname.match(
+      /^\/wallpanel-insights\/panels\/([^/]+)\/reboot$/,
+    );
+    if (wallpanelRebootMatch && request.method === "POST") {
+      const polarbearAdmin = this.getPolarbearAdmin();
+      this.assertPolarbearLoopPaused(polarbearAdmin);
+      const { unitIds } = await this.readPolarbearAdminRequest(request, url);
+      await polarbearAdmin.rebootPolarbears(unitIds);
+      this.sendJson(response, 202, { ok: true, unitIds });
+      return;
+    }
+
+    const wallpanelBaudrateMatch = url.pathname.match(
+      /^\/wallpanel-insights\/panels\/([^/]+)\/baudrate$/,
+    );
+    if (wallpanelBaudrateMatch && request.method === "POST") {
+      const polarbearAdmin = this.getPolarbearAdmin();
+      this.assertPolarbearLoopPaused(polarbearAdmin);
+      const { unitIds, baudrate } = await this.readPolarbearAdminRequest(request, url);
+
+      if (!baudrate || BAUDRATE_VALUES[baudrate] === undefined) {
+        throw new Error(
+          `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(BAUDRATE_VALUES).join(", ")}`,
+        );
+      }
+
+      await polarbearAdmin.setPolarbearBaudrate(unitIds, baudrate);
+      this.sendJson(response, 202, { ok: true, unitIds, baudrate });
+      return;
+    }
+
+    const aircoInsightsMatch = url.pathname.match(
+      /^\/airco-insights\/rooms\/([^/]+)\/([^/]+)$/,
+    );
+    if (aircoInsightsMatch && request.method === "GET") {
+      this.sendJson(response, 200, await this.aircoInsightsResponse());
+      return;
+    }
+
+    const aircoStreamMatch = url.pathname.match(
+      /^\/airco-insights\/stream\/rooms\/([^/]+)\/([^/]+)$/,
+    );
+    if (aircoStreamMatch && request.method === "GET") {
+      await this.streamInsights(response, "insights", () => this.aircoInsightsResponse());
+      return;
+    }
+
+    const aircoCommandMatch = url.pathname.match(
+      /^\/airco-insights\/rooms\/([^/]+)\/([^/]+)\/aircos\/([^/]+)\/commands$/,
+    );
+    if (aircoCommandMatch && request.method === "POST") {
+      await this.handleFrontendAircoCommand(request);
+      this.sendJson(response, 202, { ok: true });
       return;
     }
 
@@ -1677,6 +2142,138 @@ class ControlHttpServer {
     }
 
     this.sendJson(response, 404, { ok: false, error: "not found" });
+  }
+
+  private async wallpanelInsightsResponse(): Promise<unknown> {
+    const settings = await this.configStore.getSettings();
+    const state = this.readableState();
+
+    return {
+      roomName: settings.roomName,
+      generatedAt: new Date().toISOString(),
+      panels: [
+        {
+          panelId: settings.wallpanel.id,
+          name: settings.wallpanel.name,
+          ip: settings.wallpanel.host,
+          port: settings.wallpanel.port,
+          type: settings.wallpanel.units[0]?.type,
+          terminalIds: settings.wallpanel.units.map((unit) => unit.id),
+          status: "ok",
+          error: null,
+          units: settings.wallpanel.units.map((unit) => ({
+            unitId: unit.id,
+            zones: unit.zones.map((zone) => ({
+              zone,
+              status: "ok",
+              setpoint: state.setpoint?.value,
+              virtualTemperature: state.virtualTemp?.value,
+              fanSpeed: state.fanSpeed?.value,
+              fanMode: state.fanMode?.value,
+            })),
+          })),
+        },
+      ],
+    };
+  }
+
+  private async aircoInsightsResponse(): Promise<unknown> {
+    const settings = await this.configStore.getSettings();
+    const state = this.readableState();
+
+    return {
+      zoneId: settings.climatezoneId,
+      roomId: settings.roomId,
+      roomName: settings.roomName,
+      generatedAt: new Date().toISOString(),
+      aircos: [
+        {
+          aircoId: settings.airco.airconditionerId,
+          name: settings.airco.name,
+          deviceType: settings.airco.model,
+          adapterType: "HeinAndHopmanIpSystem",
+          environmentDeviceId: settings.airco.deviceId,
+          unitId: settings.airco.unitId,
+          commands: ["setpoint", "fanSpeed", "fanMode"],
+          zones: [
+            {
+              zone: CONFIG.airco.zone,
+              status: "ok",
+              setpoint: state.setpoint?.value,
+              virtualTemperature: state.virtualTemp?.value,
+              fanSpeed: state.fanSpeed?.value,
+              fanMode: state.fanMode?.value,
+              updatedAt:
+                state.setpoint?.updatedAt ??
+                state.virtualTemp?.updatedAt ??
+                state.fanSpeed?.updatedAt ??
+                state.fanMode?.updatedAt ??
+                null,
+              commands: ["setpoint", "fanSpeed", "fanMode"],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private async streamInsights(
+    response: ServerResponse,
+    eventName: string,
+    buildPayload: () => Promise<unknown>,
+  ): Promise<void> {
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    const send = async () => {
+      try {
+        response.write(`event: ${eventName}\n`);
+        response.write(`data: ${JSON.stringify(await buildPayload())}\n\n`);
+      } catch (error) {
+        response.write("event: insights-error\n");
+        response.write(`data: ${JSON.stringify({ message: formatError(error) })}\n\n`);
+      }
+    };
+
+    await send();
+    const interval = setInterval(() => {
+      void send();
+    }, 2500);
+
+    response.on("close", () => clearInterval(interval));
+  }
+
+  private async handleFrontendAircoCommand(request: IncomingMessage): Promise<void> {
+    const body = await this.readJsonRequest<{
+      property?: string;
+      value?: unknown;
+      zone?: unknown;
+    }>(request);
+    const value = Number(body.value);
+
+    if (!Number.isFinite(value)) {
+      throw new Error("missing numeric value");
+    }
+
+    if (body.property === "setpoint") {
+      await this.publishCommand(TOPICS.setTemperatureSet, round1(value));
+      return;
+    }
+
+    if (body.property === "fanMode") {
+      await this.publishCommand(TOPICS.fanModeSet, normalizeFanMode(value));
+      return;
+    }
+
+    if (body.property === "fanSpeed") {
+      await this.publishCommand(TOPICS.fanSpeedSet, Math.round(value));
+      return;
+    }
+
+    throw new Error(`unsupported command property: ${body.property}`);
   }
 
   private readableState(): Record<string, { value: number; updatedAt: string } | null> {
@@ -2338,18 +2935,8 @@ class ControlHttpServer {
 }
 
 /* -------------------------------------------------------------------------- */
-/* MQTT CLIENT VOOR POLARBEAR                                                 */
+/* services/PolarbearMqttClient.ts */
 /* -------------------------------------------------------------------------- */
-
-type PolarbearMqttHandlers = {
-  onVirtualTemperature: (value: number) => void;
-  onSetTemperatureCommand: (value: number) => void;
-  onFanModeCommand: (value: number) => void;
-  onFanSpeedCommand: (value: number) => void;
-  onSetTemperatureState: (value: number) => void;
-  onFanModeState: (value: number) => void;
-  onFanSpeedState: (value: number) => void;
-};
 
 class PolarbearMqttClient {
   private client?: mqtt.MqttClient;
@@ -2476,7 +3063,7 @@ class PolarbearMqttClient {
 }
 
 /* -------------------------------------------------------------------------- */
-/* POLARBEAR WALLPANEL PUBLISHER                                              */
+/* services/WallpanelPoller.ts */
 /* -------------------------------------------------------------------------- */
 
 class WallpanelPoller {
@@ -3307,7 +3894,7 @@ class WallpanelPoller {
 }
 
 /* -------------------------------------------------------------------------- */
-/* STARTUP                                                                    */
+/* app.ts */
 /* -------------------------------------------------------------------------- */
 
 let configStore: ConfigStore | null = null;
@@ -3373,18 +3960,28 @@ const stop = async (): Promise<void> => {
   }
 };
 
-process.once("SIGINT", async () => {
-  await stop();
-  process.exit(0);
-});
+async function startWithShutdownHandlers(): Promise<void> {
+  process.once("SIGINT", async () => {
+    await stop();
+    process.exit(0);
+  });
 
-process.once("SIGTERM", async () => {
-  await stop();
-  process.exit(0);
-});
+  process.once("SIGTERM", async () => {
+    await stop();
+    process.exit(0);
+  });
 
-start().catch(async (error) => {
-  log(`fatal: ${formatError(error)}`);
-  await stop();
-  process.exit(1);
-});
+  await start();
+}
+
+async function startOrExit(): Promise<void> {
+  try {
+    await startWithShutdownHandlers();
+  } catch (error) {
+    log(`fatal: ${formatError(error)}`);
+    await stop();
+    process.exit(1);
+  }
+}
+
+void startOrExit();

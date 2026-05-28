@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from './api';
 import { SelectInput } from './components/ClimateFormControls';
 import SemiCircularTemperatureSlider from './components/SemiCircularTemperatureSlider';
 import { GENERIC_AIRCO_DEFAULTS, type AirconditionerDevice } from './model';
@@ -9,8 +10,6 @@ import type {
   AircoInsightsResponse,
   AircoInsightZone,
 } from './airco-insights/model';
-
-const API_BASE = 'http://localhost:3000';
 
 type CommandProperty = 'setpoint' | 'fanSpeed' | 'fanMode';
 type CommandOverrides = Record<string, number>;

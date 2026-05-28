@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from './api';
 import WallpanelInsightPanelCard from './wallpanel-insights/WallpanelInsightPanelCard';
 import WallpanelInsightsFilters from './wallpanel-insights/WallpanelInsightsFilters';
 import type {
@@ -8,8 +9,6 @@ import type {
   PolarbearLoopStatus,
   WallpanelInsightsProps,
 } from './wallpanel-insights/model';
-
-const API_BASE = 'http://localhost:3000';
 
 export default function WallpanelInsights({
   zones,
