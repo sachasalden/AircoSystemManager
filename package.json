@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "jest --runInBand",
     "airco:backend": "node --loader ts-node/esm --experimental-specifier-resolution=node src/Airco/main.ts",
-    "airco:prototype": "tsx src/AircoSync-Prototype/WallpanelAircoSync.ts",
+    "airco:prototype": "tsx src/AircoSync-Prototype/src/server.ts",
     "moxa:test": "ts-node src/moxa-connection-test.ts",
     "moxa:modbus": "ts-node src/moxa-modbus-test.ts",
     "moxa:diagnostics": "ts-node src/moxa-modbus-diagnostics.ts",

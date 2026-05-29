@@ -1,0 +1,18 @@
+export const CONTROL_PATHS = {
+  root: "/",
+  status: "/api/status",
+  settings: "/api/settings",
+  devices: "/devices",
+  environmentDevices: "/environment-devices",
+  aircoAdapterTypes: "/airco-adapter-types",
+  polarbearReboot: "/api/polarbears/reboot",
+  polarbearBaudrate: "/api/polarbears/baudrate",
+  polarbearPause: "/api/polarbears/pause",
+  polarbearResume: "/api/polarbears/resume",
+  setpoint: "/api/setpoint",
+  fanMode: "/api/fan-mode",
+  fanSpeed: "/api/fan-speed",
+  wallpanelSyncStatus: "/wallpanel-insights/sync/status",
+  wallpanelSyncPause: "/wallpanel-insights/sync/pause",
+  wallpanelSyncResume: "/wallpanel-insights/sync/resume",
+} as const;
