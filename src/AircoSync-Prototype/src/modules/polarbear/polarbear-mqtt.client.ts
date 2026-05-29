@@ -17,7 +17,7 @@ export class PolarbearMqttClient {
       this.client = client;
 
       client.once("connect", () => {
-        log(`polarbear mqtt verbonden met ${CONFIG.mqtt.broker}`);
+        log(`polarbear mqtt connected with ${CONFIG.mqtt.broker}`);
 
         client.subscribe(
           [
@@ -35,7 +35,7 @@ export class PolarbearMqttClient {
               return;
             }
 
-            log("polarbear mqtt subscribed op state en command topics");
+            log("polarbear mqtt subscribes on state and command topics");
             resolve();
           },
         );
@@ -78,7 +78,7 @@ export class PolarbearMqttClient {
 
     if (value === null) {
       log(
-        `ongeldige polarbear mqtt payload topic=${topic} payload=${payload.toString()}`,
+        `invalid polarbear mqtt payload topic=${topic} payload=${payload.toString()}`,
       );
       return;
     }

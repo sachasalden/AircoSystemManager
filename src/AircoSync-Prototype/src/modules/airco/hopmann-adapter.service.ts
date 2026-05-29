@@ -62,7 +62,7 @@ export class HopmannAdapterService {
   }
 
   /**
-   * Bewust per request:
+   * per request:
    * connect -> read/write -> close.
    */
   private async readOrWrite(

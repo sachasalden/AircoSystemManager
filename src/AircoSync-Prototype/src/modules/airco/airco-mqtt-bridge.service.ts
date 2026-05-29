@@ -20,7 +20,7 @@ export class AircoMqttBridgeService {
     await this.airco.connect();
     await this.connectMqtt();
 
-    log(`airco mqtt bridge gestart airco=${CONFIG.airco.host}:${CONFIG.airco.port}`);
+    log(`airco mqtt bridge started airco=${CONFIG.airco.host}:${CONFIG.airco.port}`);
 
     void this.virtualTempLoop();
   }
@@ -43,7 +43,7 @@ export class AircoMqttBridgeService {
       this.client = client;
 
       client.once("connect", () => {
-        log(`airco bridge mqtt verbonden met ${CONFIG.mqtt.broker}`);
+        log(`airco bridge mqtt connected with ${CONFIG.mqtt.broker}`);
 
         client.subscribe(
           [TOPICS.setTemperatureSet, TOPICS.fanModeSet, TOPICS.fanSpeedSet],
@@ -53,7 +53,7 @@ export class AircoMqttBridgeService {
               return;
             }
 
-            log("airco bridge subscribed op command topics");
+            log("airco bridge subscribes on command topics");
             resolve();
           },
         );
@@ -77,7 +77,7 @@ export class AircoMqttBridgeService {
     const value = toNumber(payload);
 
     if (value === null) {
-      log(`ongeldige mqtt payload topic=${topic} payload=${payload.toString()}`);
+      log(`invalid mqtt payload topic=${topic} payload=${payload.toString()}`);
       return;
     }
 
@@ -100,7 +100,7 @@ export class AircoMqttBridgeService {
   private async handleSetTemperature(value: number): Promise<void> {
     const temperature = round1(value);
 
-    log(`airco ontvangt via mqtt setTemperature=${temperature}`);
+    log(`airco received setTemperature=${temperature} via mqtt `);
 
     await this.safeWrite(() =>
       this.airco.setSetpoint(CONFIG.airco.unitId, CONFIG.airco.zone, temperature),
@@ -112,7 +112,7 @@ export class AircoMqttBridgeService {
   private async handleFanMode(value: number): Promise<void> {
     const fanMode = normalizeFanMode(value);
 
-    log(`airco ontvangt via mqtt fanMode=${fanMode}`);
+    log(`airco received fanMode=${fanMode} via mqtt`);
 
     await this.safeWrite(() =>
       this.airco.setFanMode(CONFIG.airco.unitId, CONFIG.airco.zone, fanMode),
@@ -122,7 +122,7 @@ export class AircoMqttBridgeService {
   }
 
   private async handleFanSpeed(value: number): Promise<void> {
-    log(`airco ontvangt via mqtt fanSpeed=${value}`);
+    log(`airco received fanSpeed=${value} via mqtt`);
 
     await this.safeWrite(() =>
       this.airco.setFanSpeed(CONFIG.airco.unitId, CONFIG.airco.zone, value),
@@ -167,7 +167,7 @@ export class AircoMqttBridgeService {
       await task();
     } catch (error) {
       if (isTimeoutError(error)) {
-        log("airco write timeout, mogelijk wel aangekomen");
+        log("airco write timeout, maybe received");
         return;
       }
 

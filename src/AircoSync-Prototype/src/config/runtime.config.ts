@@ -14,13 +14,13 @@ export const CONFIG = {
     suppressOwnWriteMs: 12000,
 
     /**
-     * Pauze tussen virtualTemp writes:
+     * Pause between virtualTemp writes:
      * unit 1 register 603 -> 300ms -> unit 2 register 21051
      */
     virtualTempWriteGapMs: 300,
 
     /**
-     * Normale setTemperature/fan-sync.
+     * Normal setTemperature/fan-sync.
      * Alleen zone 1.
      */
     units: [
@@ -29,7 +29,7 @@ export const CONFIG = {
     ] as Unit[],
 
     /**
-     * VirtualTemp alleen zone 1:
+     * VirtualTemp only zone 1:
      * - unit 1 / v1 -> register 603
      * - unit 2 / v3 -> register 21051
      */

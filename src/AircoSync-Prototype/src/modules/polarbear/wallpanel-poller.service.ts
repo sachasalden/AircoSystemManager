@@ -31,8 +31,8 @@ export class WallpanelPollerService {
   private mqttCommandFlushRunning = false;
 
   /**
-   * MQTT schrijft niet direct naar Modbus.
-   * We bewaren alleen de laatste waarde.
+   * MQTT doesn't write directly to Modbus.
+   * We only save the last value.
    */
   private latestVirtualTempFromMqtt: number | null = null;
   private latestSetpointStateFromMqtt: number | null = null;
@@ -56,8 +56,8 @@ export class WallpanelPollerService {
     await this.initializeSetpointCache();
 
     /**
-     * Pas na startup/cache subscriben op virtualTemp,
-     * zodat retained MQTT de startup-cache niet vervuilt.
+     * after startup/cache subscribe on virtualTemp,
+     * so retained MQTT doesn't put old values to startup-cache.
      */
     await this.mqttClient.connect();
 
@@ -75,7 +75,7 @@ export class WallpanelPollerService {
         await this.processCandidates();
 
         /**
-         * VirtualTemp pas na de normale wallpanel-sync proberen te schrijven.
+         * Only write the Virtualtemp after the wallpanel-sync.
          */
         await this.flushVirtualTempIfWallpanelIdle();
       } finally {
@@ -110,7 +110,7 @@ export class WallpanelPollerService {
 
     this.pollPaused = true;
     await this.waitForPollIdle();
-    log("polarbear poll-loop gepauzeerd, modbus verbinding blijft open");
+    log("polarbear poll-loop gepauzeerd, modbus stays open");
   }
 
   async resumePolarbearLoop(): Promise<void> {
@@ -118,7 +118,7 @@ export class WallpanelPollerService {
       return;
     }
 
-    log("polarbear poll-loop hervatten: mqtt state eerst naar polarbears");
+    log("polarbear poll-loop continues: mqtt state first to polarbears");
     await this.syncLatestMqttStateToPolarbears();
     await this.initializeSetpointCache();
     this.pollPaused = false;
@@ -145,7 +145,7 @@ export class WallpanelPollerService {
       try {
         flags = await this.polarbear.getFlags(unit.id);
       } catch (error) {
-        log(`flags lezen mislukt unit=${unit.id}: ${formatError(error)}`);
+        log(`flags read failed unit=${unit.id}: ${formatError(error)}`);
         continue;
       }
 
@@ -170,7 +170,7 @@ export class WallpanelPollerService {
       }
     }
 
-    log("setpoint-cache klaar");
+    log("setpoint-cache ready");
   }
 
   private async updateSetpointCache(
@@ -202,7 +202,7 @@ export class WallpanelPollerService {
 
       return previous;
     } catch (error) {
-      log(`pending setpoint lezen mislukt unit=${unit.id}: ${formatError(error)}`);
+      log(`pending setpoint read failed unit=${unit.id}: ${formatError(error)}`);
 
       return (
         previous ?? {
@@ -237,14 +237,14 @@ export class WallpanelPollerService {
       cache.changedAt < existing.changedAt
     ) {
       log(
-        `stale setpoint genegeerd unit=${unit.id} zone=${zone} value=${cache.value}`,
+        `stale setpoint ignored unit=${unit.id} zone=${zone} value=${cache.value}`,
       );
       return;
     }
 
     if (existing && existing.type === "setpoint") {
       log(
-        `candidate overschreven zone=${zone}: unit=${existing.sourceUnitId} value=${existing.value} -> unit=${unit.id} value=${cache.value}`,
+        `candidate overwritten zone=${zone}: unit=${existing.sourceUnitId} value=${existing.value} -> unit=${unit.id} value=${cache.value}`,
       );
     }
 
@@ -283,7 +283,7 @@ export class WallpanelPollerService {
 
       if (existing && existing.type === "fanMode") {
         log(
-          `candidate fan overschreven zone=${zone}: unit=${existing.sourceUnitId} mode=${existing.fanMode} speed=${existing.fanSpeed} -> unit=${unit.id} mode=${fanMode} speed=${fanSpeed}`,
+          `candidate fan overwritten zone=${zone}: unit=${existing.sourceUnitId} mode=${existing.fanMode} speed=${existing.fanSpeed} -> unit=${unit.id} mode=${fanMode} speed=${fanSpeed}`,
         );
       }
 
@@ -302,7 +302,7 @@ export class WallpanelPollerService {
         `candidate fan unit=${unit.id} zone=${zone} mode=${fanMode} speed=${fanSpeed}`,
       );
     } catch (error) {
-      log(`fan verwerken mislukt unit=${unit.id}: ${formatError(error)}`);
+      log(`fan process failed unit=${unit.id}: ${formatError(error)}`);
     }
   }
 
@@ -317,7 +317,7 @@ export class WallpanelPollerService {
       }
 
       log(
-        `candidate verwerken type=${candidate.type} source=${candidate.sourceUnitId} zone=${candidate.zone} ageMs=${ageMs}`,
+        `candidate processing type=${candidate.type} source=${candidate.sourceUnitId} zone=${candidate.zone} ageMs=${ageMs}`,
       );
 
       await this.syncCandidate(candidate);
@@ -370,13 +370,13 @@ export class WallpanelPollerService {
     }
 
     if (candidate.type === "setpoint") {
-      log(`definitieve setTemperature naar mqtt=${candidate.value}`);
+      log(`final setTemperature to mqtt=${candidate.value}`);
       this.mqttClient.publishSetTemperatureCommand(candidate.value);
       return;
     }
 
     log(
-      `definitieve fan naar mqtt mode=${candidate.fanMode} speed=${candidate.fanSpeed}`,
+      `final fan to mqtt mode=${candidate.fanMode} speed=${candidate.fanSpeed}`,
     );
 
     this.mqttClient.publishFanModeCommand(candidate.fanMode);
@@ -387,9 +387,9 @@ export class WallpanelPollerService {
     const rounded = roundHalf(value);
 
     /**
-     * Belangrijk:
-     * MQTT handler schrijft NIET naar Modbus.
-     * Hij bewaart alleen de laatste waarde.
+     * important:
+     * MQTT handler doesn't write to Modbus.
+     * it only saves the last value.
      */
     this.latestVirtualTempFromMqtt = rounded;
     this.virtualTempDirty = true;
@@ -402,7 +402,7 @@ export class WallpanelPollerService {
     this.latestSetpointStateFromMqtt = temperature;
 
     if (this.pollPaused) {
-      log(`setpoint state bewaard tijdens pauze value=${temperature}`);
+      log(`setpoint state saved while on pause value=${temperature}`);
     }
   }
 
@@ -411,7 +411,7 @@ export class WallpanelPollerService {
     this.latestFanModeStateFromMqtt = fanMode;
 
     if (this.pollPaused) {
-      log(`fanMode state bewaard tijdens pauze value=${fanMode}`);
+      log(`fanMode state saved while on pause value=${fanMode}`);
     }
   }
 
@@ -542,7 +542,7 @@ export class WallpanelPollerService {
 
     if (pendingPanelChange.changedAt > command.createdAt) {
       log(
-        `mqtt command overgeslagen omdat panel nieuwer is type=${command.type} zone=${command.zone}`,
+        `mqtt command skipped cause panel is newer type=${command.type} zone=${command.zone}`,
       );
       return false;
     }
@@ -550,7 +550,7 @@ export class WallpanelPollerService {
     this.candidates.delete(key);
 
     log(
-      `mqtt command wint van oudere panel candidate type=${command.type} zone=${command.zone}`,
+      `mqtt command wins from panel candidate type=${command.type} zone=${command.zone}`,
     );
 
     return true;
@@ -559,7 +559,7 @@ export class WallpanelPollerService {
   private async applyMqttSetpointToPolarbears(
     command: Extract<MqttWallpanelCommand, { type: "setpoint" }>,
   ): Promise<void> {
-    log(`mqtt setpoint naar polarbears zone=${command.zone} value=${command.value}`);
+    log(`mqtt setpoint to polarbears zone=${command.zone} value=${command.value}`);
 
     for (const unit of CONFIG.wallpanel.units) {
       if (!unit.zones.includes(command.zone)) {
@@ -588,7 +588,7 @@ export class WallpanelPollerService {
   private async applyMqttFanModeToPolarbears(
     command: Extract<MqttWallpanelCommand, { type: "fanMode" }>,
   ): Promise<void> {
-    log(`mqtt fanMode naar polarbears zone=${command.zone} value=${command.value}`);
+    log(`mqtt fanMode to polarbears zone=${command.zone} value=${command.value}`);
 
     for (const unit of CONFIG.wallpanel.units) {
       if (!unit.zones.includes(command.zone)) {
@@ -613,7 +613,7 @@ export class WallpanelPollerService {
   private async applyMqttFanSpeedToPolarbears(
     command: Extract<MqttWallpanelCommand, { type: "fanSpeed" }>,
   ): Promise<void> {
-    log(`mqtt fanSpeed naar polarbears zone=${command.zone} value=${command.value}`);
+    log(`mqtt fanSpeed to polarbears zone=${command.zone} value=${command.value}`);
 
     for (const unit of CONFIG.wallpanel.units) {
       if (!unit.zones.includes(command.zone)) {
@@ -667,11 +667,11 @@ export class WallpanelPollerService {
     }
 
     /**
-     * Als er nog een normale setpoint/fan candidate actief is,
-     * absoluut geen virtualTemp schrijven.
+     * if there is a setpoint/fan candidate active,
+     * don't write a virtualTemperature.
      */
     if (this.candidates.size > 0) {
-      log("virtualTemp uitgesteld omdat wallpanel-sync nog candidate actief heeft");
+      log("virtualTemp postponed cause wallpanel-sync has a active candidate");
       return;
     }
 
@@ -681,9 +681,9 @@ export class WallpanelPollerService {
       const valueToWrite = this.latestVirtualTempFromMqtt;
 
       /**
-       * Deze waarde wordt nu verwerkt.
-       * Als tijdens het schrijven nieuwe MQTT binnenkomt,
-       * zet queueVirtualTemperatureFromMqtt virtualTempDirty weer op true.
+       * This value is getting processed.
+       * If while writing a mqtt value comes in,
+       * set queueVirtualTemperatureFromMqtt virtualTempDirty true.
        */
       this.virtualTempDirty = false;
 
@@ -699,7 +699,7 @@ export class WallpanelPollerService {
     const rounded = roundHalf(value);
     const signature = virtualTempSignature(rounded);
 
-    log(`virtualTemp schrijven na wallpanel-sync rounded=${rounded}`);
+    log(`virtualTemp write to wallpanel-sync rounded=${rounded}`);
 
     for (
       let index = 0;
@@ -715,8 +715,8 @@ export class WallpanelPollerService {
 
       try {
         /**
-         * VirtualTemp kan setpoint flags/pending changes veroorzaken.
-         * Daarom onderdrukken we de mogelijke eigen write.
+         * VirtualTemp may cause setpoint flags/pending changes.
+         * that's why we suppress the own write.
          */
         this.suppressOwnWrite(
           target.unitId,
@@ -760,7 +760,7 @@ export class WallpanelPollerService {
       }
     }
 
-    log("startup flags gewist");
+    log("startup flags deleted");
   }
 
   private async safeClearFlag(
@@ -787,7 +787,7 @@ export class WallpanelPollerService {
       await task();
     } catch (error) {
       if (isTimeoutError(error)) {
-        log("write timeout, mogelijk wel aangekomen");
+        log("write timeout, maybe received");
         return;
       }
 
@@ -831,6 +831,3 @@ export class WallpanelPollerService {
     return true;
   }
 }
-
-/* -------------------------------------------------------------------------- */
-/* app.ts */

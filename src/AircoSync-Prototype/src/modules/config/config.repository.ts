@@ -12,7 +12,7 @@ export class ConfigRepository {
     this.client = new MongoClient(CONFIG.database.uri);
     await this.client.connect();
     this.database = this.client.db(CONFIG.database.name);
-    log(`mongodb verbonden database=${CONFIG.database.name}`);
+    log(`mongodb connected database=${CONFIG.database.name}`);
   }
 
   async close(): Promise<void> {
@@ -24,7 +24,7 @@ export class ConfigRepository {
     applyRuntimeSettings(settings);
 
     log(
-      `config geladen uit mongodb panel=${settings.wallpanel.host}:${settings.wallpanel.port} airco=${settings.airco.host}:${settings.airco.port}`,
+      `config loaded from mongodb panel=${settings.wallpanel.host}:${settings.wallpanel.port} airco=${settings.airco.host}:${settings.airco.port}`,
     );
 
     return settings;
@@ -37,7 +37,7 @@ export class ConfigRepository {
       .findOne({ "rooms.aircopanels.0": { $exists: true } });
 
     if (!climatezone) {
-      throw new Error("geen climatezone met aircopanel gevonden");
+      throw new Error("no climatezone found with aircopanel ");
     }
 
     const room = this.findConfigRoom(climatezone);
@@ -45,11 +45,11 @@ export class ConfigRepository {
     const airconditioner = room.airconditioners?.[0];
 
     if (!panel) {
-      throw new Error("geen aircopanel in climatezone room gevonden");
+      throw new Error("no aircopanel found in climatezone room");
     }
 
     if (!airconditioner?.data?.deviceId) {
-      throw new Error("geen airconditioner deviceId in climatezone room gevonden");
+      throw new Error("no airconditioner deviceId found in climatezone room ");
     }
 
     const device = await database
@@ -60,7 +60,7 @@ export class ConfigRepository {
 
     if (!device) {
       throw new Error(
-        `geen airco device gevonden voor id=${airconditioner.data.deviceId}`,
+        `no airco device found for id=${airconditioner.data.deviceId}`,
       );
     }
 
@@ -258,7 +258,7 @@ export class ConfigRepository {
     );
 
     if (!zone || !room) {
-      throw new Error(`aircopanel niet gevonden: ${id}`);
+      throw new Error(`aircopanel not found: ${id}`);
     }
 
     const next = this.normalizePanelForDb({ ...panel, id });
@@ -309,7 +309,7 @@ export class ConfigRepository {
     );
 
     if (!zone || !room) {
-      throw new Error(`airconditioner niet gevonden: ${id}`);
+      throw new Error(`airconditioner not found: ${id}`);
     }
 
     const next = this.normalizeAirconditionerForDb({ ...airco, id });
@@ -336,7 +336,7 @@ export class ConfigRepository {
 
   private getDatabase(): Db {
     if (!this.database) {
-      throw new Error("mongodb is niet verbonden");
+      throw new Error("mongodb is not connected");
     }
 
     return this.database;
@@ -389,7 +389,7 @@ export class ConfigRepository {
     );
 
     if (!room) {
-      throw new Error("geen room met aircopanel en airconditioner gevonden");
+      throw new Error("no room found with aircopanel and airconditioner ");
     }
 
     return room;

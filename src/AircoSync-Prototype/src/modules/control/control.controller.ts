@@ -70,7 +70,7 @@ export class ControlController {
 
       client.once("connect", () => {
         this.mqttConnected = true;
-        log(`control mqtt verbonden met ${CONFIG.mqtt.broker}`);
+        log(`control mqtt connected with ${CONFIG.mqtt.broker}`);
 
         client.subscribe(
           [
@@ -136,7 +136,7 @@ export class ControlController {
     if (request.method === "GET" && url.pathname === CONTROL_PATHS.root) {
       this.sendJson(response, 200, {
         ok: true,
-        message: "WallpanelAircoSync backend actief. Gebruik de React frontend uit frontend/.",
+        message: "WallpanelAircoSync backend active. Use the React frontend from frontend/.",
       });
       return;
     }
@@ -653,7 +653,7 @@ export class ControlController {
 
   private getPolarbearAdmin(): PolarbearAdminController {
     if (!this.polarbearAdmin) {
-      throw new Error("polarbear admin is niet actief in deze runMode");
+      throw new Error("polarbear admin is not active in this runMode");
     }
 
     return this.polarbearAdmin;
@@ -664,7 +664,7 @@ export class ControlController {
   ): void {
     if (!polarbearAdmin.getPolarbearLoopStatus().paused) {
       throw new Error(
-        "zet eerst de polarbear poll-loop op pauze voordat je reboot of baudrate wijzigt",
+        "pause the polarbear poll-loop first before rebooting or changing the baudrate ",
       );
     }
   }
@@ -693,7 +693,7 @@ export class ControlController {
 
     if (unknownUnitIds.length > 0) {
       throw new Error(
-        `onbekende polarbear unit-id(s): ${unknownUnitIds.join(", ")}`,
+        `unknown polarbear unit-id(s): ${unknownUnitIds.join(", ")}`,
       );
     }
 
@@ -725,7 +725,7 @@ export class ControlController {
     const uniqueUnitIds = Array.from(new Set(unitIds));
 
     if (uniqueUnitIds.length === 0) {
-      throw new Error("geen geldige polarbear unit-ids opgegeven");
+      throw new Error("No valid polarbear units-id has been giving");
     }
 
     return uniqueUnitIds;

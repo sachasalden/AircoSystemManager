@@ -118,7 +118,7 @@ export class PolarbearService {
     await this.client.write(target.register, encoded);
 
     log(
-      `virtualTemp geschreven ${target.name} unit=${target.unitId} zone=${target.zone} register=${target.register} value=${rounded} encoded=${encoded}`,
+      `virtualTemp written ${target.name} unit=${target.unitId} zone=${target.zone} register=${target.register} value=${rounded} encoded=${encoded}`,
     );
   }
 
@@ -133,13 +133,13 @@ export class PolarbearService {
       );
     }
 
-    log(`polarbear baudrate instellen ${baudrate} encoded=${encodedValue}`);
+    log(`polarbear baudrate install ${baudrate} encoded=${encodedValue}`);
 
     for (const unitId of unitIds) {
       log(`polarbear baudrate request unit=${unitId}`);
       this.client.setId(unitId);
       await this.client.write(REGISTERS.baudRate, encodedValue);
-      log(`polarbear baudrate gezet unit=${unitId} value=${baudrate}`);
+      log(`polarbear baudrate set unit=${unitId} value=${baudrate}`);
       await sleep(500);
     }
   }
@@ -153,11 +153,11 @@ export class PolarbearService {
         await this.client.writeCoil(COILS.reboot, true);
       } catch (error) {
         log(
-          `polarbear reboot response genegeerd unit=${unitId}: ${formatError(error)}`,
+          `polarbear reboot response ignored unit=${unitId}: ${formatError(error)}`,
         );
       }
 
-      log(`polarbear reboot gestart unit=${unitId}`);
+      log(`polarbear reboot started unit=${unitId}`);
       await sleep(500);
     }
   }
