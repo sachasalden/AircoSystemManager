@@ -82,9 +82,9 @@ export default function WallpanelInsights({
     }
   }
 
-  async function rebootPanel(panel: InsightPanel) {
+  async function rebootPanelUnit(panel: InsightPanel, unitId: number) {
     const ok = window.confirm(
-      `Reboot wallpanel ${panel.name} terminals ${panel.terminalIds.join(', ')}?`,
+      `Reboot wallpanel ${panel.name} terminal ${unitId}?`,
     );
 
     if (!ok) return;
@@ -95,12 +95,14 @@ export default function WallpanelInsights({
 
       await axios.post(
         `${API_BASE}/wallpanel-insights/panels/${panel.panelId}/reboot`,
-        { unitIds: panel.terminalIds },
+        { unitIds: [unitId] },
       );
 
-      setAdminMessage(`Reboot sent to ${panel.name}`);
+      setAdminMessage(`Reboot sent to ${panel.name} terminal ${unitId}`);
     } catch (err: any) {
-      setAdminMessage(err?.response?.data?.message || 'Failed to reboot panel');
+      setAdminMessage(
+        err?.response?.data?.message || `Failed to reboot terminal ${unitId}`,
+      );
     } finally {
       setAdminBusy(false);
       void fetchSyncStatus();
@@ -270,7 +272,9 @@ export default function WallpanelInsights({
               panel={panel}
               syncPaused={syncStatus.paused}
               adminBusy={adminBusy}
-              onReboot={(targetPanel) => void rebootPanel(targetPanel)}
+              onReboot={(targetPanel, unitId) =>
+                void rebootPanelUnit(targetPanel, unitId)
+              }
               onBaudrate={(targetPanel, baudrate) =>
                 void setPanelBaudrate(targetPanel, baudrate)
               }

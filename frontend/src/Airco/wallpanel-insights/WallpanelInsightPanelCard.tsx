@@ -5,7 +5,7 @@ type WallpanelInsightPanelCardProps = {
   panel: InsightPanel;
   syncPaused: boolean;
   adminBusy: boolean;
-  onReboot: (panel: InsightPanel) => void;
+  onReboot: (panel: InsightPanel, unitId: number) => void;
   onBaudrate: (panel: InsightPanel, baudrate: number) => void;
 };
 
@@ -32,19 +32,27 @@ export default function WallpanelInsightPanelCard({
         </div>
 
         <div className="wallpanel-admin-row">
-          <button
-            className="wallpanel-admin-btn danger"
-            type="button"
-            disabled={!syncPaused || adminBusy}
-            onClick={() => onReboot(panel)}
-            title={
-              syncPaused
-                ? 'Reboot configured terminals'
-                : 'Pause sync before reboot'
-            }
-          >
-            Reboot
-          </button>
+          <div className="wallpanel-baud-control">
+            <span>Reboot</span>
+            <div className="wallpanel-baud-options">
+              {panel.terminalIds.map((unitId) => (
+                <button
+                  className="wallpanel-admin-btn danger"
+                  key={unitId}
+                  type="button"
+                  disabled={!syncPaused || adminBusy}
+                  onClick={() => onReboot(panel, unitId)}
+                  title={
+                    syncPaused
+                      ? `Reboot terminal ${unitId}`
+                      : 'Pause sync before reboot'
+                  }
+                >
+                  {unitId}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {syncPaused ? (
             <div className="wallpanel-baud-control">
