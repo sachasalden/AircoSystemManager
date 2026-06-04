@@ -5,7 +5,6 @@ import {
     Routes,
     Route,
 } from "react-router-dom";
-import Footer from "./assets/Footer.tsx";
 import Climate from './Airco/Climate.tsx';
 
 function App() {
@@ -18,10 +17,6 @@ function App() {
                     </Routes>
                 </Router>
             </main>
-
-            <footer className="">
-                <Footer/>
-            </footer>
         </div>
     );
 }
