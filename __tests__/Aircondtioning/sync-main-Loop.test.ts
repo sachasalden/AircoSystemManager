@@ -241,7 +241,7 @@ describe('SyncMainLoop', () => {
     );
   });
 
-  it('should publish local panel change and apply it to airco locally', async () => {
+  it('should publish local panel change to mqtt', async () => {
     await loop.start();
 
     const localMessage = {
@@ -271,15 +271,12 @@ describe('SyncMainLoop', () => {
       value: VALUE,
     });
 
-    expect(aircoMonitor.applyPanelChangeLocally).toHaveBeenCalledWith(
-      ROOMS,
-      expectedMessage,
-    );
+    expect(aircoMonitor.applyPanelChangeLocally).not.toHaveBeenCalled();
 
     expect(mqtt.publish).toHaveBeenCalledWith(expectedMessage);
   });
 
-  it('should publish local airco change and apply it to panel locally', async () => {
+  it('should publish local airco change to mqtt', async () => {
     await loop.start();
 
     const localMessage = {
@@ -309,10 +306,7 @@ describe('SyncMainLoop', () => {
       value: VALUE,
     });
 
-    expect(panelMonitor.applyAircoChangeLocally).toHaveBeenCalledWith(
-      ROOMS,
-      expectedMessage,
-    );
+    expect(panelMonitor.applyAircoChangeLocally).not.toHaveBeenCalled();
 
     expect(mqtt.publish).toHaveBeenCalledWith(expectedMessage);
   });

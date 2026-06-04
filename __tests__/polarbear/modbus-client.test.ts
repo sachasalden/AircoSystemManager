@@ -81,6 +81,7 @@ describe('ModbusClient', () => {
   });
 
   it('should read holding registers', async () => {
+    (client as any).connected = true;
     mockModbusInstance.readHoldingRegisters.mockResolvedValue({
       data: [10, 20],
     });
@@ -95,6 +96,7 @@ describe('ModbusClient', () => {
   });
 
   it('should write register', async () => {
+    (client as any).connected = true;
     mockModbusInstance.writeRegister.mockResolvedValue(undefined);
 
     await client.writeRegister(12, 99);
@@ -102,74 +104,18 @@ describe('ModbusClient', () => {
     expect(mockModbusInstance.writeRegister).toHaveBeenCalledWith(12, 99);
   });
 
-  it('should warn when no stored host or port exists for reconnect', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-
-    client.handleReconnect();
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      'Connection lost. No stored host/port to reconnect to.',
+  it('should throw when reading without an active or stored connection', async () => {
+    await expect(client.readHoldingRegisters(100, 1)).rejects.toThrow(
+      'Modbus client is not connected',
     );
   });
 
-  it('should do nothing when already reconnecting', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const connectSpy = jest.spyOn(client, 'connect');
+  it('should mark disconnected and reset the underlying client', () => {
+    (client as any).connected = true;
 
-    (client as any).reconnecting = true;
-    (client as any).lastHost = '192.168.1.10';
-    (client as any).lastPort = 502;
+    client.markDisconnected();
 
-    client.handleReconnect();
-
-    expect(warnSpy).not.toHaveBeenCalled();
-    expect(connectSpy).not.toHaveBeenCalled();
-  });
-
-  it('should attempt reconnect and log success', async () => {
-    jest.useFakeTimers();
-
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    const connectSpy = jest
-      .spyOn(client, 'connect')
-      .mockResolvedValue(undefined);
-
-    (client as any).lastHost = '192.168.1.10';
-    (client as any).lastPort = 502;
-
-    client.handleReconnect();
-
-    expect((client as any).reconnecting).toBe(true);
     expect((client as any).connected).toBe(false);
-    expect(warnSpy).toHaveBeenCalledWith(
-      'Connection lost. Attempting to reconnect...',
-    );
-
-    jest.advanceTimersByTime(5000);
-    await Promise.resolve();
-
-    expect(connectSpy).toHaveBeenCalledWith('192.168.1.10', 502);
-    expect(logSpy).toHaveBeenCalledWith('Reconnected successfully');
-  });
-
-  it('should log error and reset reconnecting when reconnect fails', async () => {
-    jest.useFakeTimers();
-
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    jest.spyOn(client, 'connect').mockRejectedValue(new Error('boom'));
-
-    (client as any).lastHost = '192.168.1.10';
-    (client as any).lastPort = 502;
-
-    client.handleReconnect();
-
-    expect((client as any).reconnecting).toBe(true);
-
-    await jest.advanceTimersByTimeAsync(5000);
-
-    expect(errorSpy).toHaveBeenCalledWith('Reconnection failed:', 'boom');
-    expect((client as any).reconnecting).toBe(false);
+    expect(ModbusRTU).toHaveBeenCalledTimes(2);
   });
 });

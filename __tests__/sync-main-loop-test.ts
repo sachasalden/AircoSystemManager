@@ -252,7 +252,7 @@ describe('SyncMainLoop', () => {
     expect(echoGuardMock.cleanup).toHaveBeenCalledTimes(2);
   });
 
-  it('should route local airco change to panel monitor and mqtt', async () => {
+  it('should publish local airco change to mqtt', async () => {
     await loop.start();
 
     const message = {
@@ -276,14 +276,11 @@ describe('SyncMainLoop', () => {
       ...message,
     };
 
-    expect(panelMonitorMock.applyAircoChangeLocally).toHaveBeenCalledWith(
-      ROOMS,
-      expectedFullMessage,
-    );
+    expect(panelMonitorMock.applyAircoChangeLocally).not.toHaveBeenCalled();
     expect(mqttMock.publish).toHaveBeenCalledWith(expectedFullMessage);
   });
 
-  it('should route local panel change to airco monitor and mqtt', async () => {
+  it('should publish local panel change to mqtt', async () => {
     await loop.start();
 
     const message = {
@@ -307,10 +304,7 @@ describe('SyncMainLoop', () => {
       ...message,
     };
 
-    expect(aircoMonitorMock.applyPanelChangeLocally).toHaveBeenCalledWith(
-      ROOMS,
-      expectedFullMessage,
-    );
+    expect(aircoMonitorMock.applyPanelChangeLocally).not.toHaveBeenCalled();
     expect(mqttMock.publish).toHaveBeenCalledWith(expectedFullMessage);
   });
 

@@ -45,7 +45,7 @@ describe('PolarbearController', () => {
   let clientMock: {
     connect: jest.Mock;
     disconnect: jest.Mock;
-    handleReconnect: jest.Mock;
+    markDisconnected: jest.Mock;
   };
 
   let serviceMock: {
@@ -81,7 +81,7 @@ describe('PolarbearController', () => {
     clientMock = {
       connect: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn().mockResolvedValue(undefined),
-      handleReconnect: jest.fn(),
+      markDisconnected: jest.fn(),
     };
 
     serviceMock = {
@@ -131,7 +131,7 @@ describe('PolarbearController', () => {
 
     logResult('handleReconnect called', true, true);
 
-    expect(clientMock.handleReconnect).toHaveBeenCalled();
+    expect(clientMock.markDisconnected).toHaveBeenCalled();
   });
 
   it('should set temperature through service', async () => {

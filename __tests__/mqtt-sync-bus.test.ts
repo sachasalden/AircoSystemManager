@@ -19,6 +19,11 @@ describe('MqttSyncBus', () => {
   const VALID_SCHEMA = 'aircotest.sync.v4';
 
   let onMessage: jest.Mock;
+  let onPanelStateMessage: jest.Mock;
+  let handlers: {
+    onSyncMessage: jest.Mock;
+    onPanelStateMessage: jest.Mock;
+  };
   let mockClient: any;
   let bus: MqttSyncBus;
 
@@ -41,7 +46,7 @@ describe('MqttSyncBus', () => {
       }),
       subscribe: jest.fn(
         (
-          _topic: string,
+          _topic: string | string[],
           _options: { qos: number },
           callback: (error?: Error | null) => void,
         ) => {
@@ -82,6 +87,11 @@ describe('MqttSyncBus', () => {
     jest.clearAllMocks();
 
     onMessage = jest.fn().mockResolvedValue(undefined);
+    onPanelStateMessage = jest.fn().mockResolvedValue(undefined);
+    handlers = {
+      onSyncMessage: onMessage,
+      onPanelStateMessage,
+    };
     mockClient = createMockClient();
     (connect as jest.Mock).mockReturnValue(mockClient);
 
@@ -91,7 +101,7 @@ describe('MqttSyncBus', () => {
   it('should connect and subscribe on start', async () => {
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -100,21 +110,21 @@ describe('MqttSyncBus', () => {
       clean: CLEAN_SESSION,
     });
     expect(mockClient.subscribe).toHaveBeenCalledWith(
-      TOPIC,
+      [TOPIC, `${TOPIC_PREFIX}/panel-state/+/+/+/+/+`],
       { qos: QOS },
       expect.any(Function),
     );
     expect(logSpy).toHaveBeenCalledWith(
-      `[MqttSyncBus] connected broker=${BROKER_URL} topic=${TOPIC}`,
+      `[MqttSyncBus] connected broker=${BROKER_URL} eventsTopic=${TOPIC} panelStateTopicFilter=${TOPIC_PREFIX}/panel-state/+/+/+/+/+`,
     );
   });
 
   it('should not connect twice when already started', async () => {
-    const firstStart = bus.start(onMessage);
+    const firstStart = bus.start(handlers);
     mockClient.emit('connect');
     await firstStart;
 
-    await bus.start(onMessage);
+    await bus.start(handlers);
 
     expect(connect).toHaveBeenCalledTimes(1);
     expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
@@ -123,7 +133,7 @@ describe('MqttSyncBus', () => {
   it('should reject start when connect fails', async () => {
     const error = new Error('connect failed');
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('error', error);
 
     await expect(startPromise).rejects.toThrow('connect failed');
@@ -141,7 +151,7 @@ describe('MqttSyncBus', () => {
       },
     );
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
 
     await expect(startPromise).rejects.toThrow('subscribe failed');
@@ -152,7 +162,7 @@ describe('MqttSyncBus', () => {
   });
 
   it('should end client on stop', async () => {
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -166,7 +176,7 @@ describe('MqttSyncBus', () => {
   });
 
   it('should publish message after start', async () => {
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -189,7 +199,7 @@ describe('MqttSyncBus', () => {
   it('should reject publish when mqtt publish fails', async () => {
     const publishError = new Error('publish failed');
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -208,7 +218,7 @@ describe('MqttSyncBus', () => {
   });
 
   it('should call onMessage for valid external message', async () => {
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -222,20 +232,20 @@ describe('MqttSyncBus', () => {
     expect(onMessage).toHaveBeenCalledWith(validMessage);
   });
 
-  it('should ignore message from same source instance', async () => {
+  it('should pass message from same source instance to the handler', async () => {
     const ownMessage: SyncMessage = {
       ...validMessage,
       sourceInstanceId: SOURCE_INSTANCE_ID,
     };
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
     mockClient.emit('message', TOPIC, Buffer.from(JSON.stringify(ownMessage)));
     await flushAsyncWork();
 
-    expect(onMessage).not.toHaveBeenCalled();
+    expect(onMessage).toHaveBeenCalledWith(ownMessage);
   });
 
   it('should ignore message with wrong schema', async () => {
@@ -244,7 +254,7 @@ describe('MqttSyncBus', () => {
       schema: 'wrong.schema',
     } as SyncMessage;
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -261,7 +271,7 @@ describe('MqttSyncBus', () => {
   it('should ignore message from another topic', async () => {
     const OTHER_TOPIC = 'airco/other/events';
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -278,7 +288,7 @@ describe('MqttSyncBus', () => {
   it('should log invalid message when payload is not valid json', async () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -296,7 +306,7 @@ describe('MqttSyncBus', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const clientError = new Error('mqtt client error');
 
-    const startPromise = bus.start(onMessage);
+    const startPromise = bus.start(handlers);
     mockClient.emit('connect');
     await startPromise;
 
@@ -305,3 +315,4 @@ describe('MqttSyncBus', () => {
     expect(errorSpy).toHaveBeenCalledWith('[MqttSyncBus] error', clientError);
   });
 });
+

@@ -38,7 +38,7 @@ describe('SyncTypes runtime helpers', () => {
   });
 
   it('should contain airco to panel properties', () => {
-    const expected = ['virtualTemperature', 'fanSpeed', 'fanMode'];
+    const expected = ['setpoint', 'virtualTemperature', 'fanSpeed', 'fanMode'];
 
     logResult('AIRCO_TO_PANEL_PROPERTIES', AIRCO_TO_PANEL_PROPERTIES, expected);
 
