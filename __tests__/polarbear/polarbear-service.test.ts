@@ -10,10 +10,11 @@ describe('PolarbearService', () => {
       connect: jest.fn(),
       disconnect: jest.fn(),
       close: jest.fn(),
-      handleReconnect: jest.fn(),
+      markDisconnected: jest.fn(),
       setID: jest.fn(),
       readHoldingRegisters: jest.fn(),
       writeRegister: jest.fn(),
+      writeCoil: jest.fn(),
     } as unknown as jest.Mocked<ModbusClient>;
 
     service = new PolarbearService(client);
@@ -48,7 +49,7 @@ describe('PolarbearService', () => {
     expect(client.setID).toHaveBeenCalledWith(1);
     expect(client.readHoldingRegisters).toHaveBeenNthCalledWith(1, 7001, 1);
     expect(client.readHoldingRegisters).toHaveBeenNthCalledWith(2, 603, 1);
-    expect(result).toBe(22.4);
+    expect(result).toBe(22.5);
   });
 
   it('should get virtual temperature for v2', async () => {
@@ -102,8 +103,7 @@ describe('PolarbearService', () => {
   });
 
   it('should get fan speed', async () => {
-    // @ts-ignore
-    client.readHoldingRegisters.mockResolvedValue({ data: [3] });
+    client.readHoldingRegisters.mockResolvedValue([3]);
 
     const result = await service.getFanSpeed(1, 2);
 

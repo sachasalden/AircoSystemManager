@@ -35,6 +35,7 @@ describe('PolarbearMonitor', () => {
     setVirtualTemp: jest.Mock;
     setFanSpeed: jest.Mock;
     setFanMode: jest.Mock;
+    getFanSpeed: jest.Mock;
     getFlags: jest.Mock;
     clearFlag: jest.Mock;
     getPendingSetpoint: jest.Mock;
@@ -145,6 +146,7 @@ describe('PolarbearMonitor', () => {
     setVirtualTemp: jest.fn().mockResolvedValue(undefined),
     setFanSpeed: jest.fn().mockResolvedValue(undefined),
     setFanMode: jest.fn().mockResolvedValue(undefined),
+    getFanSpeed: jest.fn().mockResolvedValue(FAN_SPEED),
     getFlags: jest.fn().mockResolvedValue(0),
     clearFlag: jest.fn().mockResolvedValue(undefined),
     getPendingSetpoint: jest.fn().mockResolvedValue(23.5),
@@ -183,6 +185,7 @@ describe('PolarbearMonitor', () => {
       onSnapshot,
       MODBUS_TIMEOUT_MS,
       REQUEST_GAP_MS,
+      0,
     );
   });
 
@@ -195,8 +198,10 @@ describe('PolarbearMonitor', () => {
       host: '192.168.1.10',
       port: 502,
       unitIds: [UNIT_10],
+      unitTypes: {},
       minInterMessageGapMs: REQUEST_GAP_MS,
       timeoutMs: MODBUS_TIMEOUT_MS,
+      reconnectDelayMs: 5000,
     });
 
     expect(poller.getSnapshot).toHaveBeenCalledWith(UNIT_10);
