@@ -208,6 +208,61 @@ export class ConfigRepository {
       .toArray();
   }
 
+  async addZone(zone: Partial<ClimatezoneDocument>): Promise<unknown> {
+    const next = {
+      _id: new ObjectId(),
+      name: String(zone.name ?? "New zone"),
+      rooms: [] as DbRoom[],
+    };
+
+    await this.getDatabase()
+      .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
+      .insertOne(next);
+
+    return {
+      id: next._id.toHexString(),
+      _id: next._id.toHexString(),
+      name: next.name,
+      rooms: next.rooms,
+    };
+  }
+
+  async deleteZone(id: string): Promise<void> {
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .deleteOne({ _id: new ObjectId(id) });
+  }
+
+  async addRoom(
+    room: Partial<DbRoom> & { zoneId: string },
+  ): Promise<unknown> {
+    const next: DbRoom = {
+      id: String(room.id ?? randomUUID()),
+      name: String(room.name ?? "New room"),
+      airconditioners: [],
+      groups: [],
+      aircopanels: [],
+    };
+
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { _id: new ObjectId(room.zoneId) },
+        { $push: { rooms: next } } as any,
+      );
+
+    return { ...next, zoneId: room.zoneId };
+  }
+
+  async deleteRoom(zoneId: string, roomId: string): Promise<void> {
+    await this.getDatabase()
+      .collection(CONFIG.database.climatezonesCollection)
+      .updateOne(
+        { _id: new ObjectId(zoneId) },
+        { $pull: { rooms: { id: roomId } } } as any,
+      );
+  }
+
   async addEnvironmentDevice(device: Partial<EnvironmentAircoDeviceDocument>): Promise<unknown> {
     const next = {
       id: String(device.id ?? randomUUID()),

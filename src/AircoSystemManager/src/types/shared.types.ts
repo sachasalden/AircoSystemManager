@@ -124,6 +124,7 @@ export type DbRoom = {
   name?: string;
   airconditioners?: DbAirconditioner[];
   aircopanels?: DbAircoPanel[];
+  groups?: unknown[];
 };
 
 export type ClimatezoneDocument = {

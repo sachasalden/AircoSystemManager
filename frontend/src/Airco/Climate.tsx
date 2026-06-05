@@ -19,6 +19,7 @@ import {
   normalizeZones,
   type AirconditionerDevice,
   type EnvironmentDevice,
+  type Room,
   type WallpanelVersion,
   type Zone,
 } from './model';
@@ -43,6 +44,12 @@ export default function Climate() {
 
   const [aircoModalOpen, setAircoModalOpen] = useState(false);
   const [aircoToDelete, setAircoToDelete] = useState<string | null>(null);
+
+  const [zoneModalOpen, setZoneModalOpen] = useState(false);
+  const [zoneToDelete, setZoneToDelete] = useState<string | null>(null);
+
+  const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const [roomToDelete, setRoomToDelete] = useState<string | null>(null);
 
   const [showWallpanelForm, setShowWallpanelForm] = useState(false);
   const [showAircoForm, setShowAircoForm] = useState(false);
@@ -91,6 +98,123 @@ export default function Climate() {
   const compatibleEnvironmentDevices = environmentDevices.filter((device) =>
     supportedEnvironmentDeviceTypes.includes(device.type),
   );
+
+  async function addZone() {
+    const name = window.prompt('Zone name', 'New zone')?.trim();
+
+    if (!name) {
+      return;
+    }
+
+    try {
+      const res = await axios.post(`${API_BASE}/zones`, { name });
+      const [zone] = normalizeZones([res.data]);
+
+      setZones((prev) => [...prev, zone]);
+      setActiveView('zones');
+      setSelectedZoneId(zone.id);
+      setSelectedRoomId(null);
+    } catch (err) {
+      console.error('Failed to add zone', err);
+      window.alert('Failed to add zone');
+    }
+  }
+
+  async function confirmDeleteZone() {
+    if (!zoneToDelete) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_BASE}/zones/${zoneToDelete}`);
+
+      setZones((prev) => prev.filter((zone) => zone.id !== zoneToDelete));
+
+      if (selectedZoneId === zoneToDelete) {
+        setSelectedZoneId(null);
+        setSelectedRoomId(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete zone', err);
+      window.alert('Failed to delete zone');
+    } finally {
+      setZoneModalOpen(false);
+      setZoneToDelete(null);
+    }
+  }
+
+  async function addRoom() {
+    if (!selectedZoneId) {
+      window.alert('Select a zone first.');
+      return;
+    }
+
+    const name = window.prompt('Room name', 'New room')?.trim();
+
+    if (!name) {
+      return;
+    }
+
+    try {
+      const res = await axios.post(`${API_BASE}/zones/${selectedZoneId}/rooms`, {
+        name,
+      });
+      const room: Room = {
+        id: String(res.data.id ?? ''),
+        name: String(res.data.name ?? name),
+        aircopanels: [],
+        airconditioners: [],
+      };
+
+      setZones((prevZones) =>
+        prevZones.map((zone) =>
+          zone.id !== selectedZoneId
+            ? zone
+            : {
+                ...zone,
+                rooms: [...zone.rooms, room],
+              },
+        ),
+      );
+      setSelectedRoomId(room.id);
+    } catch (err) {
+      console.error('Failed to add room', err);
+      window.alert('Failed to add room');
+    }
+  }
+
+  async function confirmDeleteRoom() {
+    if (!selectedZoneId || !roomToDelete) {
+      return;
+    }
+
+    try {
+      await axios.delete(
+        `${API_BASE}/zones/${selectedZoneId}/rooms/${roomToDelete}`,
+      );
+
+      setZones((prevZones) =>
+        prevZones.map((zone) =>
+          zone.id !== selectedZoneId
+            ? zone
+            : {
+                ...zone,
+                rooms: zone.rooms.filter((room) => room.id !== roomToDelete),
+              },
+        ),
+      );
+
+      if (selectedRoomId === roomToDelete) {
+        setSelectedRoomId(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete room', err);
+      window.alert('Failed to delete room');
+    } finally {
+      setRoomModalOpen(false);
+      setRoomToDelete(null);
+    }
+  }
 
   async function addEnvironmentDevice(value: {
     name: string;
@@ -525,26 +649,46 @@ export default function Climate() {
           Airco insights
         </button>
 
-        <h4 style={{ marginTop: 24 }}>Zones</h4>
+        <div className="side-section-title">
+          <div>
+            <h4>Zones</h4>
+            <p>Manage climate areas</p>
+          </div>
+          <button className="zone-add-btn" type="button" onClick={addZone}>
+            New zone
+          </button>
+        </div>
 
         {zones.map((zone) => (
-          <button
-            key={zone.id}
-            className={`menu-item ${
-              activeView === 'zones' && selectedZoneId === zone.id
-                ? 'active'
-                : ''
-            }`}
-            onClick={() => {
-              setActiveView('zones');
-              setSelectedZoneId(zone.id);
-              setSelectedRoomId(null);
-              setShowWallpanelForm(false);
-              setShowAircoForm(false);
-            }}
-          >
-            {zone.name}
-          </button>
+          <div className="zone-menu-row" key={zone.id}>
+            <button
+              className={`menu-item ${
+                activeView === 'zones' && selectedZoneId === zone.id
+                  ? 'active'
+                  : ''
+              }`}
+              onClick={() => {
+                setActiveView('zones');
+                setSelectedZoneId(zone.id);
+                setSelectedRoomId(null);
+                setShowWallpanelForm(false);
+                setShowAircoForm(false);
+              }}
+            >
+              {zone.name}
+            </button>
+            <button
+              className="zone-remove-btn"
+              type="button"
+              onClick={() => {
+                setZoneToDelete(zone.id);
+                setZoneModalOpen(true);
+              }}
+              aria-label={`Remove zone ${zone.name}`}
+            >
+              Remove
+            </button>
+          </div>
         ))}
       </aside>
 
@@ -593,26 +737,51 @@ export default function Climate() {
             <div className="room-selector">
               {selectedZone && (
                 <>
-                  <h4 className="room-selector-title">
-                    Rooms in {selectedZone.name}
-                  </h4>
+                  <div className="room-selector-header">
+                    <h4 className="room-selector-title">
+                      Rooms in {selectedZone.name}
+                    </h4>
+                    <button
+                      type="button"
+                      className="room-add-btn"
+                      onClick={addRoom}
+                    >
+                      New room
+                    </button>
+                  </div>
                   <div className="room-selector-list">
                     {selectedZone.rooms.map((room) => (
-                      <button
-                        key={room.id}
-                        className={`room-chip ${
-                          selectedRoomId === room.id ? 'active' : ''
-                        }`}
-                        onClick={() => {
-                          setSelectedRoomId(room.id);
-                          setShowWallpanelForm(false);
-                          setShowAircoForm(false);
-                        }}
-                        type="button"
-                      >
-                        {room.name}
-                      </button>
+                      <div className="room-chip-wrap" key={room.id}>
+                        <button
+                          className={`room-chip ${
+                            selectedRoomId === room.id ? 'active' : ''
+                          }`}
+                          onClick={() => {
+                            setSelectedRoomId(room.id);
+                            setShowWallpanelForm(false);
+                            setShowAircoForm(false);
+                          }}
+                          type="button"
+                        >
+                          {room.name}
+                        </button>
+                        <button
+                          className="room-remove-btn"
+                          type="button"
+                          onClick={() => {
+                            setSelectedRoomId(room.id);
+                            setRoomToDelete(room.id);
+                            setRoomModalOpen(true);
+                          }}
+                          aria-label={`Remove room ${room.name}`}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     ))}
+                    {selectedZone.rooms.length === 0 && (
+                      <div className="empty">No rooms in this zone yet</div>
+                    )}
                   </div>
                 </>
               )}
@@ -764,6 +933,22 @@ export default function Climate() {
         open={aircoModalOpen}
         onCancel={() => setAircoModalOpen(false)}
         onConfirm={confirmDeleteAirco}
+      />
+
+      <ConfirmModal
+        title="Remove zone"
+        message="Are you sure you want to remove this zone? All rooms and devices inside it will also be removed."
+        open={zoneModalOpen}
+        onCancel={() => setZoneModalOpen(false)}
+        onConfirm={confirmDeleteZone}
+      />
+
+      <ConfirmModal
+        title="Remove room"
+        message="Are you sure you want to remove this room? Devices inside this room will also be removed."
+        open={roomModalOpen}
+        onCancel={() => setRoomModalOpen(false)}
+        onConfirm={confirmDeleteRoom}
       />
     </div>
   );

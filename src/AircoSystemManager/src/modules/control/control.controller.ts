@@ -174,6 +174,47 @@ export class ControlController {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/zones") {
+      this.sendJson(
+        response,
+        201,
+        await this.configStore.addZone(
+          await this.readJsonRequest<{ name?: string }>(request),
+        ),
+      );
+      return;
+    }
+
+    const zoneMatch = url.pathname.match(/^\/zones\/([^/]+)$/);
+    if (zoneMatch && request.method === "DELETE") {
+      await this.configStore.deleteZone(decodeURIComponent(zoneMatch[1]));
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    const roomCollectionMatch = url.pathname.match(/^\/zones\/([^/]+)\/rooms$/);
+    if (roomCollectionMatch && request.method === "POST") {
+      this.sendJson(
+        response,
+        201,
+        await this.configStore.addRoom({
+          ...(await this.readJsonRequest<{ name?: string }>(request)),
+          zoneId: decodeURIComponent(roomCollectionMatch[1]),
+        }),
+      );
+      return;
+    }
+
+    const roomMatch = url.pathname.match(/^\/zones\/([^/]+)\/rooms\/([^/]+)$/);
+    if (roomMatch && request.method === "DELETE") {
+      await this.configStore.deleteRoom(
+        decodeURIComponent(roomMatch[1]),
+        decodeURIComponent(roomMatch[2]),
+      );
+      this.sendJson(response, 200, { ok: true });
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === CONTROL_PATHS.environmentDevices) {
       this.sendJson(response, 200, await this.configStore.getEnvironmentDevices());
       return;
