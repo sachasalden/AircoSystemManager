@@ -1,17 +1,32 @@
 services:
+  mongo:
+    image: mongo:7
+    container_name: wallpanel-sync-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: wallpanel
+      MONGO_INITDB_ROOT_PASSWORD: wallpanel
+      MONGO_INITDB_DATABASE: wallpanel_sync
+    volumes:
+      - mongo-data:/data/db
+      - ./src/AircoSystemManager/docker/mongo/init:/docker-entrypoint-initdb.d:ro
+
   airco-api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: airco-api
     restart: unless-stopped
-
+    depends_on:
+      - mongo
     ports:
-      - "3000:3000"
-
-    env_file:
-      - .env
-
+      - "8088:8088"
     environment:
       NODE_ENV: production
-      PORT: 3000
+      MONGO_URI: mongodb://wallpanel:wallpanel@mongo:27017/wallpanel_sync?authSource=admin
+      MONGO_DB: wallpanel_sync
+
+volumes:
+  mongo-data:

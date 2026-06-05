@@ -7,6 +7,6 @@ RUN npm ci
 
 COPY . .
 
-EXPOSE 3000
+EXPOSE 8088
 
 CMD ["npm", "run", "start:docker"]

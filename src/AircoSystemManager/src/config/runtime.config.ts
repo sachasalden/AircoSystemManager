@@ -1,11 +1,10 @@
-import type { FlagType, Unit, VirtualTemperatureTarget, Zone } from "../types/shared.types";
+import type { FlagType, Zone } from "../types/shared.types";
 
 export const CONFIG = {
   runMode: "both" as "both" | "polarbearPublisher" | "aircoBridge",
 
   wallpanel: {
-    host: "192.168.55.97",
-    port: 4001,
+    defaultPort: 4001,
     timeoutMs: 10000,
     requestGapMs: 100,
     pollIntervalMs: 100,
@@ -14,47 +13,25 @@ export const CONFIG = {
     suppressOwnWriteMs: 12000,
 
     /**
-     * Pause between virtualTemp writes:
-     * unit 1 register 603 -> 300ms -> unit 2 register 21051
+     * Pause between sequential virtual temperature writes.
      */
     virtualTempWriteGapMs: 300,
-
-    /**
-     * Normal setTemperature/fan-sync.
-     * Alleen zone 1.
-     */
-    units: [
-      { id: 1, name: "v1", zones: [1] },
-      { id: 2, name: "v3", zones: [1] },
-    ] as Unit[],
-
-    /**
-     * VirtualTemp only zone 1:
-     * - unit 1 / v1 -> register 603
-     * - unit 2 / v3 -> register 21051
-     */
-    virtualTemperatureTargets: [
-      { unitId: 1, name: "v1", zone: 1, register: 603 },
-      { unitId: 2, name: "v3", zone: 1, register: 21051 },
-    ] as VirtualTemperatureTarget[],
   },
 
   airco: {
-    host: "192.168.55.10",
-    port: 502,
-    unitId: 1,
-    zone: 1 as Zone,
-
-    model: "FC-3000DC/FC-3500DC",
-    bidirectional: true,
+    defaultPort: 502,
+    defaultUnitId: 1,
+    defaultZone: 1 as Zone,
+    defaultType: "HeinAndHopmanIpSystem",
+    defaultModel: "FC-3000DC/FC-3500DC",
 
     virtualTempPollIntervalMs: 2000,
     requestTimeoutMs: 5000,
   },
 
   mqtt: {
-    broker: "mqtt://192.168.55.10",
-    topicBase: "polarbears/wallpanel/airco",
+    broker: process.env.MQTT_BROKER,
+    topicBase: process.env.MQTT_TOPIC_BASE ?? "polarbears/wallpanel/airco",
 
     retainCommands: false,
     retainStates: true,
@@ -72,8 +49,10 @@ export const CONFIG = {
       process.env.MONGO_URI ??
       "mongodb://wallpanel:wallpanel@localhost:27017/wallpanel_sync?authSource=admin",
     name: process.env.MONGO_DB ?? "wallpanel_sync",
-    climatezonesCollection: "Climatezones",
-    aircoDevicesCollection: "enviormentsaircodevices",
+    climatezonesCollection:
+      process.env.MONGO_CLIMATEZONES_COLLECTION ?? "Climatezones",
+    aircoDevicesCollection:
+      process.env.MONGO_AIRCO_DEVICES_COLLECTION ?? "enviormentsaircodevices",
   },
 };
 
@@ -115,9 +94,6 @@ export const FLAG_BITS: Record<FlagType, Record<Zone, number>> = {
   },
 };
 
-export const DEVICE_TYPE_A = "FC-500PC/FC-1100PC";
-export const DEVICE_TYPE_B = "FC-3000DC/FC-3500DC";
-
 export const TOPICS = {
   setTemperatureSet: `${CONFIG.mqtt.topicBase}/setTemperature/set`,
   setTemperatureState: `${CONFIG.mqtt.topicBase}/setTemperature/state`,
@@ -131,5 +107,3 @@ export const TOPICS = {
   virtualTempState: `${CONFIG.mqtt.topicBase}/virtualTemp/state`,
 };
 
-/* -------------------------------------------------------------------------- */
-/* utils/helpers.ts */

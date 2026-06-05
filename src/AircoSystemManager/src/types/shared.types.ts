@@ -73,9 +73,14 @@ export type SuppressedWrite = {
 export type AircoConnection = {
   host: string;
   port: number;
+  timeoutMs?: number;
   model?: string;
   type?: string;
   bidirectional?: boolean;
+  roomTemparatureAddress?: string | number;
+  roomTemparatureSetPointAddress?: string | number;
+  fanspeedAddress?: string | number;
+  fanspeedSetPointAddress?: string | number;
 };
 
 export type RegisterType = "readInput" | "readHold" | "writeHold";
@@ -107,6 +112,10 @@ export type DbAirconditioner = {
     deviceId?: string;
     deviceTerminalId?: string;
     type?: string;
+    roomTemparatureAddress?: string | number;
+    roomTemparatureSetPointAddress?: string | number;
+    fanspeedAddress?: string | number;
+    fanspeedSetPointAddress?: string | number;
   };
 };
 
@@ -143,6 +152,7 @@ export type RuntimeSettings = {
     name: string;
     host: string;
     port: number;
+    virtualTemperatureTargets: VirtualTemperatureTarget[];
     units: Array<{
       id: number;
       name: string;
@@ -150,15 +160,24 @@ export type RuntimeSettings = {
       zones: Zone[];
     }>;
   };
+  mqtt: {
+    broker: string;
+  };
   airco: {
     airconditionerId: string;
     deviceId: string;
     name: string;
+    type: string;
     host: string;
     port: number;
     model: string;
     unitId: number;
+    zone: Zone;
     bidirectional: boolean;
+    roomTemparatureAddress?: string | number;
+    roomTemparatureSetPointAddress?: string | number;
+    fanspeedAddress?: string | number;
+    fanspeedSetPointAddress?: string | number;
   };
 };
 
@@ -174,6 +193,7 @@ export type SettingsPatch = Partial<{
     }>>;
   }>;
   airco: Partial<{
+    type: string;
     host: string;
     port: number | string;
     model: string;

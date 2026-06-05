@@ -3,8 +3,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { URL } from "node:url";
 import { BAUDRATE_VALUES, CONFIG, TOPICS } from "../../config/runtime.config";
 import { applyCorsHeaders } from "../../middleware/cors.middleware";
-import type { DbAircoPanel, DbAirconditioner, EnvironmentAircoDeviceDocument, PolarbearAdminController, SettingsPatch } from "../../types/shared.types";
+import type { DbAircoPanel, DbAirconditioner, EnvironmentAircoDeviceDocument, PolarbearAdminController, RuntimeSettings, SettingsPatch } from "../../types/shared.types";
 import { formatError, log, normalizeFanMode, parseCommandNumber, round1, toNumber } from "../../utils/helpers";
+import type { AircoAdapterRegistry } from "../airco/airco-adapter-registry";
 import { ConfigService } from "../config/config.service";
 import { CONTROL_PATHS } from "./control.routes";
 import type { NumericState } from "./control.types";
@@ -15,10 +16,17 @@ export class ControlController {
   private mqttConnected = false;
   private state: Record<string, NumericState> = {};
   private configStore: ConfigService;
+  private aircoAdapterRegistry: AircoAdapterRegistry;
   private polarbearAdmin?: PolarbearAdminController;
 
-  constructor(configStore: ConfigService, polarbearAdmin?: PolarbearAdminController) {
+  constructor(
+    configStore: ConfigService,
+    aircoAdapterRegistry: AircoAdapterRegistry,
+    private settings: RuntimeSettings,
+    polarbearAdmin?: PolarbearAdminController,
+  ) {
     this.configStore = configStore;
+    this.aircoAdapterRegistry = aircoAdapterRegistry;
     this.polarbearAdmin = polarbearAdmin;
   }
 
@@ -65,12 +73,12 @@ export class ControlController {
 
   private async connectMqtt(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const client = mqtt.connect(CONFIG.mqtt.broker);
+      const client = mqtt.connect(this.settings.mqtt.broker);
       this.client = client;
 
       client.once("connect", () => {
         this.mqttConnected = true;
-        log(`control mqtt connected with ${CONFIG.mqtt.broker}`);
+        log(`control mqtt connected with ${this.settings.mqtt.broker}`);
 
         client.subscribe(
           [
@@ -145,7 +153,7 @@ export class ControlController {
       this.sendJson(response, 200, {
         ok: true,
         mqttConnected: this.mqttConnected,
-        broker: CONFIG.mqtt.broker,
+        broker: this.settings.mqtt.broker,
         topics: TOPICS,
         state: this.readableState(),
         polarbearLoop: this.polarbearAdmin?.getPolarbearLoopStatus() ?? null,
@@ -204,7 +212,11 @@ export class ControlController {
     }
 
     if (request.method === "GET" && url.pathname === CONTROL_PATHS.aircoAdapterTypes) {
-      this.sendJson(response, 200, [{ type: "HeinAndHopmanIpSystem" }]);
+      this.sendJson(
+        response,
+        200,
+        this.aircoAdapterRegistry.listTypes().map((type) => ({ type })),
+      );
       return;
     }
 
@@ -557,13 +569,13 @@ export class ControlController {
           aircoId: settings.airco.airconditionerId,
           name: settings.airco.name,
           deviceType: settings.airco.model,
-          adapterType: "HeinAndHopmanIpSystem",
+          adapterType: settings.airco.type,
           environmentDeviceId: settings.airco.deviceId,
           unitId: settings.airco.unitId,
           commands: ["setpoint", "fanSpeed", "fanMode"],
           zones: [
             {
-              zone: CONFIG.airco.zone,
+              zone: settings.airco.zone,
               status: "ok",
               setpoint: state.setpoint?.value,
               virtualTemperature: state.virtualTemp?.value,

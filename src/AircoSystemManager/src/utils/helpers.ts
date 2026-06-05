@@ -1,4 +1,4 @@
-import { CONFIG, FLAG_BITS, INPUTS } from "../config/runtime.config";
+import { FLAG_BITS, INPUTS } from "../config/runtime.config";
 import type { DbAircoPanel, DbModbusUnit, FlagType, RuntimeSettings, VirtualTemperatureTarget, Zone } from "../types/shared.types";
 
 export const sleep = (ms: number): Promise<void> =>
@@ -10,6 +10,18 @@ export const log = (message: string): void => {
 };
 
 export const formatError = (error: unknown): string => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    Array.isArray((error as { errors?: unknown[] }).errors)
+  ) {
+    const aggregate = error as { name?: unknown; errors: unknown[] };
+
+    return `${String(aggregate.name ?? "AggregateError")}: ${aggregate.errors
+      .map(formatError)
+      .join("; ")}`;
+  }
+
   if (error instanceof Error) {
     return `${error.name}: ${error.message}`;
   }
@@ -173,25 +185,3 @@ export const normalizeModbusUnits = (panel: DbAircoPanel): RuntimeSettings["wall
   });
 };
 
-export const applyRuntimeSettings = (settings: RuntimeSettings): void => {
-  CONFIG.wallpanel.host = settings.wallpanel.host;
-  CONFIG.wallpanel.port = settings.wallpanel.port;
-  CONFIG.wallpanel.units = settings.wallpanel.units.map((unit) => ({
-    id: unit.id,
-    name: unit.name,
-    zones: unit.zones,
-    type: unit.type,
-  }));
-  CONFIG.wallpanel.virtualTemperatureTargets = settings.wallpanel.units.map((unit) => ({
-    unitId: unit.id,
-    name: unit.name,
-    zone: unit.zones[0] ?? 1,
-    register: defaultVirtualTempRegisterForUnit(unit.id, unit.type),
-  }));
-
-  CONFIG.airco.host = settings.airco.host;
-  CONFIG.airco.port = settings.airco.port;
-  CONFIG.airco.unitId = settings.airco.unitId;
-  CONFIG.airco.model = settings.airco.model;
-  CONFIG.airco.bidirectional = settings.airco.bidirectional;
-};

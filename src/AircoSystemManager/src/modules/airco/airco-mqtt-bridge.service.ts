@@ -1,26 +1,43 @@
 import * as mqtt from "mqtt";
 import { CONFIG, TOPICS } from "../../config/runtime.config";
+import type { RuntimeSettings } from "../../types/shared.types";
 import { formatError, isTimeoutError, log, normalizeFanMode, round1, roundHalf, sleep, toNumber, virtualTempSignature } from "../../utils/helpers";
-import { HopmannAdapterService } from "./hopmann-adapter.service";
+import type { AircoAdapter } from "./airco-adapter";
+import type { AircoAdapterRegistry } from "./airco-adapter-registry";
 
 export class AircoMqttBridgeService {
   private client?: mqtt.MqttClient;
-
-  private airco = new HopmannAdapterService({
-    host: CONFIG.airco.host,
-    port: CONFIG.airco.port,
-    model: CONFIG.airco.model,
-    bidirectional: CONFIG.airco.bidirectional,
-  });
+  private airco: AircoAdapter;
 
   private running = true;
   private lastVirtualTempSignature: string | null = null;
+
+  constructor(
+    private settings: RuntimeSettings,
+    registry: AircoAdapterRegistry,
+  ) {
+    this.airco = registry.create(settings.airco.type, {
+      host: settings.airco.host,
+      port: settings.airco.port,
+      timeoutMs: CONFIG.airco.requestTimeoutMs,
+      type: settings.airco.type,
+      model: settings.airco.model,
+      bidirectional: settings.airco.bidirectional,
+      roomTemparatureAddress: settings.airco.roomTemparatureAddress,
+      roomTemparatureSetPointAddress:
+        settings.airco.roomTemparatureSetPointAddress,
+      fanspeedAddress: settings.airco.fanspeedAddress,
+      fanspeedSetPointAddress: settings.airco.fanspeedSetPointAddress,
+    });
+  }
 
   async start(): Promise<void> {
     await this.airco.connect();
     await this.connectMqtt();
 
-    log(`airco mqtt bridge started airco=${CONFIG.airco.host}:${CONFIG.airco.port}`);
+    log(
+      `airco mqtt bridge started type=${this.settings.airco.type} airco=${this.settings.airco.host}:${this.settings.airco.port}`,
+    );
 
     void this.virtualTempLoop();
   }
@@ -39,11 +56,11 @@ export class AircoMqttBridgeService {
 
   private async connectMqtt(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const client = mqtt.connect(CONFIG.mqtt.broker);
+      const client = mqtt.connect(this.settings.mqtt.broker);
       this.client = client;
 
       client.once("connect", () => {
-        log(`airco bridge mqtt connected with ${CONFIG.mqtt.broker}`);
+        log(`airco bridge mqtt connected with ${this.settings.mqtt.broker}`);
 
         client.subscribe(
           [TOPICS.setTemperatureSet, TOPICS.fanModeSet, TOPICS.fanSpeedSet],
@@ -103,7 +120,11 @@ export class AircoMqttBridgeService {
     log(`airco received setTemperature=${temperature} via mqtt `);
 
     await this.safeWrite(() =>
-      this.airco.setSetpoint(CONFIG.airco.unitId, CONFIG.airco.zone, temperature),
+      this.airco.setSetpoint(
+        this.settings.airco.unitId,
+        this.settings.airco.zone,
+        temperature,
+      ),
     );
 
     this.publishState(TOPICS.setTemperatureState, temperature);
@@ -115,7 +136,11 @@ export class AircoMqttBridgeService {
     log(`airco received fanMode=${fanMode} via mqtt`);
 
     await this.safeWrite(() =>
-      this.airco.setFanMode(CONFIG.airco.unitId, CONFIG.airco.zone, fanMode),
+      this.airco.setFanMode(
+        this.settings.airco.unitId,
+        this.settings.airco.zone,
+        fanMode,
+      ),
     );
 
     this.publishState(TOPICS.fanModeState, fanMode);
@@ -125,7 +150,11 @@ export class AircoMqttBridgeService {
     log(`airco received fanSpeed=${value} via mqtt`);
 
     await this.safeWrite(() =>
-      this.airco.setFanSpeed(CONFIG.airco.unitId, CONFIG.airco.zone, value),
+      this.airco.setFanSpeed(
+        this.settings.airco.unitId,
+        this.settings.airco.zone,
+        value,
+      ),
     );
 
     this.publishState(TOPICS.fanSpeedState, value);
@@ -135,8 +164,8 @@ export class AircoMqttBridgeService {
     while (this.running) {
       try {
         const value = await this.airco.getVirtualTemperature(
-          CONFIG.airco.unitId,
-          CONFIG.airco.zone,
+          this.settings.airco.unitId,
+          this.settings.airco.zone,
         );
 
         const rounded = roundHalf(value);

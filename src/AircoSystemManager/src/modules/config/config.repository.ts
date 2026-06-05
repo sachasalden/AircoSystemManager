@@ -2,7 +2,7 @@ import { MongoClient, ObjectId, type Db } from "mongodb";
 import { randomUUID } from "node:crypto";
 import { CONFIG } from "../../config/runtime.config";
 import type { ClimatezoneDocument, DbAircoPanel, DbAirconditioner, DbRoom, EnvironmentAircoDeviceDocument, RuntimeSettings, SettingsPatch } from "../../types/shared.types";
-import { applyRuntimeSettings, defaultPanelTypeForUnit, log, normalizeModbusUnits, toPositiveInt, toZones } from "../../utils/helpers";
+import { defaultPanelTypeForUnit, defaultVirtualTempRegisterForUnit, log, normalizeModbusUnits, toPositiveInt, toZones } from "../../utils/helpers";
 
 export class ConfigRepository {
   private client?: MongoClient;
@@ -19,12 +19,11 @@ export class ConfigRepository {
     await this.client?.close();
   }
 
-  async loadAndApply(): Promise<RuntimeSettings> {
+  async loadRuntimeSettings(): Promise<RuntimeSettings> {
     const settings = await this.getSettings();
-    applyRuntimeSettings(settings);
 
     log(
-      `config loaded from mongodb panel=${settings.wallpanel.host}:${settings.wallpanel.port} airco=${settings.airco.host}:${settings.airco.port}`,
+      `config loaded from mongodb panel=${settings.wallpanel.host}:${settings.wallpanel.port} airco=${settings.airco.host}:${settings.airco.port} mqtt=${settings.mqtt.broker}`,
     );
 
     return settings;
@@ -66,6 +65,11 @@ export class ConfigRepository {
 
     const units = normalizeModbusUnits(panel);
 
+    const zone = units[0]?.zones[0] ?? CONFIG.airco.defaultZone;
+    const adapterType =
+      String(device.type ?? airconditioner.data.type ?? "").trim() ||
+      CONFIG.airco.defaultType;
+
     return {
       climatezoneId: climatezone._id.toHexString(),
       climatezoneName: climatezone.name,
@@ -75,21 +79,37 @@ export class ConfigRepository {
         id: panel.id,
         name: String(panel.name ?? ""),
         host: panel.ip,
-        port: toPositiveInt(panel.port, CONFIG.wallpanel.port),
+        port: toPositiveInt(panel.port, CONFIG.wallpanel.defaultPort),
+        virtualTemperatureTargets: units.map((unit) => ({
+          unitId: unit.id,
+          name: unit.name,
+          zone: unit.zones[0] ?? zone,
+          register: defaultVirtualTempRegisterForUnit(unit.id, unit.type),
+        })),
         units,
+      },
+      mqtt: {
+        broker: CONFIG.mqtt.broker ?? `mqtt://${device.ip}`,
       },
       airco: {
         airconditionerId: airconditioner.id,
         deviceId: device.id,
         name: String(device.name ?? airconditioner.name ?? ""),
+        type: adapterType,
         host: device.ip,
-        port: toPositiveInt(device.port, CONFIG.airco.port),
-        model: String(airconditioner.deviceType ?? CONFIG.airco.model),
+        port: toPositiveInt(device.port, CONFIG.airco.defaultPort),
+        model: String(airconditioner.deviceType ?? CONFIG.airco.defaultModel),
         unitId: toPositiveInt(
           airconditioner.data.deviceTerminalId,
-          CONFIG.airco.unitId,
+          CONFIG.airco.defaultUnitId,
         ),
+        zone,
         bidirectional: device.bidirectional !== false,
+        roomTemparatureAddress: airconditioner.data.roomTemparatureAddress,
+        roomTemparatureSetPointAddress:
+          airconditioner.data.roomTemparatureSetPointAddress,
+        fanspeedAddress: airconditioner.data.fanspeedAddress,
+        fanspeedSetPointAddress: airconditioner.data.fanspeedSetPointAddress,
       },
     };
   }
@@ -120,6 +140,8 @@ export class ConfigRepository {
           next.airco.model,
           "rooms.$[room].airconditioners.$[airco].data.deviceTerminalId":
             String(next.airco.unitId),
+          "rooms.$[room].airconditioners.$[airco].data.type":
+            next.airco.type,
         },
       },
       {
@@ -139,12 +161,11 @@ export class ConfigRepository {
           $set: {
             ip: next.airco.host,
             port: String(next.airco.port),
+            type: next.airco.type,
             bidirectional: next.airco.bidirectional,
           },
         },
       );
-
-    applyRuntimeSettings(next);
 
     return next;
   }
@@ -167,7 +188,7 @@ export class ConfigRepository {
           ...panel,
           zoneId: zone._id.toHexString(),
           roomId: room.id,
-          port: toPositiveInt(panel.port, CONFIG.wallpanel.port),
+          port: toPositiveInt(panel.port, CONFIG.wallpanel.defaultPort),
           ids: (panel.ids ?? []).map((id) => toPositiveInt(id, 0)).filter(Boolean),
           modbusUnits: normalizeModbusUnits(panel),
         })),
@@ -191,9 +212,9 @@ export class ConfigRepository {
     const next = {
       id: String(device.id ?? randomUUID()),
       name: String(device.name ?? "New"),
-      type: String(device.type ?? "HeinAndHopmanIpSystem"),
+      type: String(device.type ?? CONFIG.airco.defaultType),
       ip: String(device.ip ?? ""),
-      port: String(device.port ?? "502"),
+      port: String(device.port ?? CONFIG.airco.defaultPort),
       bidirectional: device.bidirectional !== false,
     };
 
@@ -349,7 +370,7 @@ export class ConfigRepository {
       name: panel.name,
       ip: String(panel.ip ?? ""),
       type: panel.type,
-      port: panel.port ?? CONFIG.wallpanel.port,
+      port: panel.port ?? CONFIG.wallpanel.defaultPort,
       ids: panel.ids,
       modbusUnits: panel.modbusUnits,
     });
@@ -360,7 +381,7 @@ export class ConfigRepository {
       ip: String(panel.ip ?? ""),
       type: String(panel.type ?? modbusUnits[0]?.type ?? "moxa"),
       model: String(panel.model ?? ""),
-      port: toPositiveInt(panel.port, CONFIG.wallpanel.port),
+      port: toPositiveInt(panel.port, CONFIG.wallpanel.defaultPort),
       ids: modbusUnits.map((unit) => unit.id),
       modbusUnits,
     };
@@ -371,11 +392,13 @@ export class ConfigRepository {
       ...(airco as DbAirconditioner),
       id: String(airco.id ?? randomUUID()),
       name: String(airco.name ?? ""),
-      deviceType: String(airco.deviceType ?? CONFIG.airco.model),
+      deviceType: String(airco.deviceType ?? CONFIG.airco.defaultModel),
       data: {
         deviceId: String(airco.data?.deviceId ?? ""),
-        type: String(airco.data?.type ?? "HeinAndHopmanIpSystem"),
-        deviceTerminalId: String(airco.data?.deviceTerminalId ?? CONFIG.airco.unitId),
+        type: String(airco.data?.type ?? CONFIG.airco.defaultType),
+        deviceTerminalId: String(
+          airco.data?.deviceTerminalId ?? CONFIG.airco.defaultUnitId,
+        ),
         ...airco.data,
       },
     };
@@ -416,6 +439,7 @@ export class ConfigRepository {
           zones: toZones(unit.zones, previous?.zones ?? [1]),
         };
       }) ?? current.wallpanel.units;
+    const zone = patchedUnits[0]?.zones[0] ?? current.airco.zone;
 
     return {
       ...current,
@@ -423,14 +447,22 @@ export class ConfigRepository {
         ...current.wallpanel,
         host: String(patch.wallpanel?.host ?? current.wallpanel.host),
         port: toPositiveInt(patch.wallpanel?.port, current.wallpanel.port),
+        virtualTemperatureTargets: patchedUnits.map((unit) => ({
+          unitId: unit.id,
+          name: unit.name,
+          zone: unit.zones[0] ?? zone,
+          register: defaultVirtualTempRegisterForUnit(unit.id, unit.type),
+        })),
         units: patchedUnits,
       },
       airco: {
         ...current.airco,
+        type: String(patch.airco?.type ?? current.airco.type),
         host: String(patch.airco?.host ?? current.airco.host),
         port: toPositiveInt(patch.airco?.port, current.airco.port),
         model: String(patch.airco?.model ?? current.airco.model),
         unitId: toPositiveInt(patch.airco?.unitId, current.airco.unitId),
+        zone,
         bidirectional:
           patch.airco?.bidirectional ?? current.airco.bidirectional,
       },

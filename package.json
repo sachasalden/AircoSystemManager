@@ -28,7 +28,7 @@
     "debug:raw": "ts-node src/raw-debug-test.ts",
     "diagnose": "ts-node src/ultimate-diagnostic.ts",
     "baud:fix": "ts-node src/baud-rate-fix-guide.ts",
-    "start:docker": "tsx src/Airco/main.ts"
+    "start:docker": "tsx src/AircoSystemManager/src/server.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

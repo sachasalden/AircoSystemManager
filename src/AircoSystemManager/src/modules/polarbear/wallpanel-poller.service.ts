@@ -1,5 +1,5 @@
 import { CONFIG } from "../../config/runtime.config";
-import type { Candidate, FlagType, MqttWallpanelCommand, SetpointCache, SuppressedWrite, Unit, Zone } from "../../types/shared.types";
+import type { Candidate, FlagType, MqttWallpanelCommand, RuntimeSettings, SetpointCache, SuppressedWrite, Unit, Zone } from "../../types/shared.types";
 import { candidateKey, fanSignature, formatError, hasFlag, isTimeoutError, log, normalizeFanMode, round1, roundHalf, setpointSignature, sleep, sourceKey, virtualTempSignature, virtualTempTargetKey } from "../../utils/helpers";
 import { ModbusClient } from "../modbus/modbus.client";
 import { PolarbearService } from "./polarbear.service";
@@ -13,15 +13,7 @@ export class WallpanelPollerService {
 
   private polarbear = new PolarbearService(this.client);
 
-  private mqttClient = new PolarbearMqttClient({
-    onVirtualTemperature: (value) => this.queueVirtualTemperatureFromMqtt(value),
-    onSetTemperatureCommand: (value) => this.queueSetpointCommandFromMqtt(value),
-    onFanModeCommand: (value) => this.queueFanModeCommandFromMqtt(value),
-    onFanSpeedCommand: (value) => this.queueFanSpeedCommandFromMqtt(value),
-    onSetTemperatureState: (value) => this.rememberSetpointStateFromMqtt(value),
-    onFanModeState: (value) => this.rememberFanModeStateFromMqtt(value),
-    onFanSpeedState: (value) => this.rememberFanSpeedStateFromMqtt(value),
-  });
+  private mqttClient: PolarbearMqttClient;
 
   private candidates = new Map<string, Candidate>();
   private setpointCache = new Map<string, SetpointCache>();
@@ -45,11 +37,29 @@ export class WallpanelPollerService {
   private pollPaused = false;
   private pollCycleRunning = false;
 
+  constructor(private settings: RuntimeSettings) {
+    this.mqttClient = new PolarbearMqttClient(settings.mqtt.broker, {
+      onVirtualTemperature: (value) =>
+        this.queueVirtualTemperatureFromMqtt(value),
+      onSetTemperatureCommand: (value) =>
+        this.queueSetpointCommandFromMqtt(value),
+      onFanModeCommand: (value) => this.queueFanModeCommandFromMqtt(value),
+      onFanSpeedCommand: (value) => this.queueFanSpeedCommandFromMqtt(value),
+      onSetTemperatureState: (value) =>
+        this.rememberSetpointStateFromMqtt(value),
+      onFanModeState: (value) => this.rememberFanModeStateFromMqtt(value),
+      onFanSpeedState: (value) => this.rememberFanSpeedStateFromMqtt(value),
+    });
+  }
+
   async start(): Promise<void> {
-    await this.client.connect(CONFIG.wallpanel.host, CONFIG.wallpanel.port);
+    await this.client.connect(
+      this.settings.wallpanel.host,
+      this.settings.wallpanel.port,
+    );
 
     log(
-      `polarbear publisher gestart ${CONFIG.wallpanel.host}:${CONFIG.wallpanel.port} debounce=${CONFIG.wallpanel.debounceMs}ms`,
+      `polarbear publisher gestart ${this.settings.wallpanel.host}:${this.settings.wallpanel.port} debounce=${CONFIG.wallpanel.debounceMs}ms`,
     );
 
     await this.clearStartupFlags();
@@ -139,7 +149,7 @@ export class WallpanelPollerService {
   }
 
   private async poll(): Promise<void> {
-    for (const unit of CONFIG.wallpanel.units) {
+    for (const unit of this.settings.wallpanel.units) {
       let flags: number;
 
       try {
@@ -164,7 +174,7 @@ export class WallpanelPollerService {
   }
 
   private async initializeSetpointCache(): Promise<void> {
-    for (const unit of CONFIG.wallpanel.units) {
+    for (const unit of this.settings.wallpanel.units) {
       for (const zone of unit.zones) {
         await this.updateSetpointCache(unit, zone);
       }
@@ -326,7 +336,7 @@ export class WallpanelPollerService {
   }
 
   private async syncCandidate(candidate: Candidate): Promise<void> {
-    for (const target of CONFIG.wallpanel.units) {
+    for (const target of this.settings.wallpanel.units) {
       if (target.id === candidate.sourceUnitId) continue;
       if (!target.zones.includes(candidate.zone)) continue;
 
@@ -442,7 +452,7 @@ export class WallpanelPollerService {
   }
 
   private queueSetpointCommandFromMqtt(value: number): void {
-    const zone = CONFIG.airco.zone;
+    const zone = this.settings.airco.zone;
     const temperature = round1(value);
     const signature = setpointSignature(temperature);
 
@@ -458,7 +468,7 @@ export class WallpanelPollerService {
   }
 
   private queueFanModeCommandFromMqtt(value: number): void {
-    const zone = CONFIG.airco.zone;
+    const zone = this.settings.airco.zone;
     const fanMode = normalizeFanMode(value);
 
     this.pendingMqttCommands.set(`mqtt:${zone}:fanMode`, {
@@ -472,7 +482,7 @@ export class WallpanelPollerService {
   }
 
   private queueFanSpeedCommandFromMqtt(value: number): void {
-    const zone = CONFIG.airco.zone;
+    const zone = this.settings.airco.zone;
     const fanSpeed = Math.round(value);
 
     this.pendingMqttCommands.set(`mqtt:${zone}:fanSpeed`, {
@@ -561,7 +571,7 @@ export class WallpanelPollerService {
   ): Promise<void> {
     log(`mqtt setpoint to polarbears zone=${command.zone} value=${command.value}`);
 
-    for (const unit of CONFIG.wallpanel.units) {
+    for (const unit of this.settings.wallpanel.units) {
       if (!unit.zones.includes(command.zone)) {
         continue;
       }
@@ -590,7 +600,7 @@ export class WallpanelPollerService {
   ): Promise<void> {
     log(`mqtt fanMode to polarbears zone=${command.zone} value=${command.value}`);
 
-    for (const unit of CONFIG.wallpanel.units) {
+    for (const unit of this.settings.wallpanel.units) {
       if (!unit.zones.includes(command.zone)) {
         continue;
       }
@@ -615,7 +625,7 @@ export class WallpanelPollerService {
   ): Promise<void> {
     log(`mqtt fanSpeed to polarbears zone=${command.zone} value=${command.value}`);
 
-    for (const unit of CONFIG.wallpanel.units) {
+    for (const unit of this.settings.wallpanel.units) {
       if (!unit.zones.includes(command.zone)) {
         continue;
       }
@@ -703,10 +713,10 @@ export class WallpanelPollerService {
 
     for (
       let index = 0;
-      index < CONFIG.wallpanel.virtualTemperatureTargets.length;
+      index < this.settings.wallpanel.virtualTemperatureTargets.length;
       index++
     ) {
-      const target = CONFIG.wallpanel.virtualTemperatureTargets[index];
+      const target = this.settings.wallpanel.virtualTemperatureTargets[index];
       const key = virtualTempTargetKey(target);
 
       if (this.lastWrittenVirtualTemp.get(key) === signature) {
@@ -733,14 +743,14 @@ export class WallpanelPollerService {
         );
       }
 
-      if (index < CONFIG.wallpanel.virtualTemperatureTargets.length - 1) {
+      if (index < this.settings.wallpanel.virtualTemperatureTargets.length - 1) {
         await sleep(CONFIG.wallpanel.virtualTempWriteGapMs);
       }
     }
   }
 
   private async clearStartupFlags(): Promise<void> {
-    for (const unit of CONFIG.wallpanel.units) {
+    for (const unit of this.settings.wallpanel.units) {
       let flags: number;
 
       try {

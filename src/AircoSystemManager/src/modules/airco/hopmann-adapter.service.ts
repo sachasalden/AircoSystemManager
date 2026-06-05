@@ -1,10 +1,13 @@
 import * as jsmodbus from "jsmodbus";
 import * as net from "net";
-import { CONFIG, DEVICE_TYPE_A, DEVICE_TYPE_B } from "../../config/runtime.config";
 import type { AircoConnection, RegisterType, Zone } from "../../types/shared.types";
 import { roundHalf } from "../../utils/helpers";
+import type { AircoAdapter } from "./airco-adapter";
 
-export class HopmannAdapterService {
+const DEVICE_TYPE_A = "FC-500PC/FC-1100PC";
+const DEVICE_TYPE_B = "FC-3000DC/FC-3500DC";
+
+export class HopmannAdapterService implements AircoAdapter {
   private connection: AircoConnection;
 
   constructor(connection: AircoConnection) {
@@ -108,7 +111,7 @@ export class HopmannAdapterService {
         reject(error);
       };
 
-      socket.setTimeout(CONFIG.airco.requestTimeoutMs);
+      socket.setTimeout(this.connection.timeoutMs ?? 5000);
 
       socket.once("error", finishReject);
 

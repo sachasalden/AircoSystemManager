@@ -7,17 +7,20 @@ export class PolarbearMqttClient {
   private client?: mqtt.MqttClient;
   private handlers: PolarbearMqttHandlers;
 
-  constructor(handlers: PolarbearMqttHandlers) {
+  constructor(
+    private broker: string,
+    handlers: PolarbearMqttHandlers,
+  ) {
     this.handlers = handlers;
   }
 
   async connect(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const client = mqtt.connect(CONFIG.mqtt.broker);
+      const client = mqtt.connect(this.broker);
       this.client = client;
 
       client.once("connect", () => {
-        log(`polarbear mqtt connected with ${CONFIG.mqtt.broker}`);
+        log(`polarbear mqtt connected with ${this.broker}`);
 
         client.subscribe(
           [

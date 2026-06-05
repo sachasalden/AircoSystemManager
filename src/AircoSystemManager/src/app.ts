@@ -2,6 +2,7 @@ import { CONFIG } from "./config/runtime.config";
 import { ControlController } from "./modules/control/control.controller";
 import { ConfigService } from "./modules/config/config.service";
 import { AircoMqttBridgeService } from "./modules/airco/airco-mqtt-bridge.service";
+import { createDefaultAircoAdapterRegistry } from "./modules/airco/register-airco-adapters";
 import { WallpanelPollerService } from "./modules/polarbear/wallpanel-poller.service";
 import { formatError, log } from "./utils/helpers";
 
@@ -15,20 +16,26 @@ export const start = async (): Promise<void> => {
 
   configStore = new ConfigService();
   await configStore.connect();
-  await configStore.loadAndApply();
+  const settings = await configStore.loadRuntimeSettings();
+  const aircoAdapterRegistry = createDefaultAircoAdapterRegistry();
 
   wallpanelPoller =
     CONFIG.runMode === "both" || CONFIG.runMode === "polarbearPublisher"
-      ? new WallpanelPollerService()
+      ? new WallpanelPollerService(settings)
       : null;
 
   aircoBridge =
     CONFIG.runMode === "both" || CONFIG.runMode === "aircoBridge"
-      ? new AircoMqttBridgeService()
+      ? new AircoMqttBridgeService(settings, aircoAdapterRegistry)
       : null;
 
   controlServer = CONFIG.control.enabled
-    ? new ControlController(configStore, wallpanelPoller ?? undefined)
+    ? new ControlController(
+        configStore,
+        aircoAdapterRegistry,
+        settings,
+        wallpanelPoller ?? undefined,
+      )
     : null;
 
   if (controlServer) {
