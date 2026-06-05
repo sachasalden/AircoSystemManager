@@ -216,15 +216,19 @@ export default function AirconditionerCard({
           <div className="card-actions">
             {!isEditing ? (
               <button
-                className="circle-btn"
+                className="action-btn action-btn-neutral action-btn-small"
                 type="button"
                 onClick={() => setIsEditing(true)}
               >
                 Edit
               </button>
             ) : (
-              <button className="circle-btn" type="button" onClick={cancelEdit}>
-                ✕
+              <button
+                className="action-btn action-btn-neutral action-btn-small"
+                type="button"
+                onClick={cancelEdit}
+              >
+                Close
               </button>
             )}
           </div>
@@ -273,7 +277,7 @@ export default function AirconditionerCard({
 
             <div className="card-btn-row">
               <button
-                className="btn ghost-btn"
+                className="action-btn action-btn-danger"
                 type="button"
                 onClick={onRemove}
               >

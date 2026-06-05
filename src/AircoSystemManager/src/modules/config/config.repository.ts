@@ -1,8 +1,23 @@
-import { MongoClient, ObjectId, type Db } from "mongodb";
-import { randomUUID } from "node:crypto";
-import { CONFIG } from "../../config/runtime.config";
-import type { ClimatezoneDocument, DbAircoPanel, DbAirconditioner, DbRoom, EnvironmentAircoDeviceDocument, RuntimeSettings, SettingsPatch } from "../../types/shared.types";
-import { defaultPanelTypeForUnit, defaultVirtualTempRegisterForUnit, log, normalizeModbusUnits, toPositiveInt, toZones } from "../../utils/helpers";
+import { MongoClient, ObjectId, type Db } from 'mongodb';
+import { randomUUID } from 'node:crypto';
+import { CONFIG } from '../../config/runtime.config';
+import type {
+  ClimatezoneDocument,
+  DbAircoPanel,
+  DbAirconditioner,
+  DbRoom,
+  EnvironmentAircoDeviceDocument,
+  RuntimeSettings,
+  SettingsPatch,
+} from '../../types/shared.types';
+import {
+  defaultPanelTypeForUnit,
+  defaultVirtualTempRegisterForUnit,
+  log,
+  normalizeModbusUnits,
+  toPositiveInt,
+  toZones,
+} from '../../utils/helpers';
 
 export class ConfigRepository {
   private client?: MongoClient;
@@ -33,10 +48,10 @@ export class ConfigRepository {
     const database = this.getDatabase();
     const climatezone = await database
       .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
-      .findOne({ "rooms.aircopanels.0": { $exists: true } });
+      .findOne({ 'rooms.aircopanels.0': { $exists: true } });
 
     if (!climatezone) {
-      throw new Error("no climatezone found with aircopanel ");
+      throw new Error('no climatezone found with aircopanel ');
     }
 
     const room = this.findConfigRoom(climatezone);
@@ -44,11 +59,11 @@ export class ConfigRepository {
     const airconditioner = room.airconditioners?.[0];
 
     if (!panel) {
-      throw new Error("no aircopanel found in climatezone room");
+      throw new Error('no aircopanel found in climatezone room');
     }
 
     if (!airconditioner?.data?.deviceId) {
-      throw new Error("no airconditioner deviceId found in climatezone room ");
+      throw new Error('no airconditioner deviceId found in climatezone room ');
     }
 
     const device = await database
@@ -67,17 +82,17 @@ export class ConfigRepository {
 
     const zone = units[0]?.zones[0] ?? CONFIG.airco.defaultZone;
     const adapterType =
-      String(device.type ?? airconditioner.data.type ?? "").trim() ||
+      String(device.type ?? airconditioner.data.type ?? '').trim() ||
       CONFIG.airco.defaultType;
 
     return {
       climatezoneId: climatezone._id.toHexString(),
       climatezoneName: climatezone.name,
       roomId: room.id,
-      roomName: String(room.name ?? ""),
+      roomName: String(room.name ?? ''),
       wallpanel: {
         id: panel.id,
-        name: String(panel.name ?? ""),
+        name: String(panel.name ?? ''),
         host: panel.ip,
         port: toPositiveInt(panel.port, CONFIG.wallpanel.defaultPort),
         virtualTemperatureTargets: units.map((unit) => ({
@@ -94,7 +109,7 @@ export class ConfigRepository {
       airco: {
         airconditionerId: airconditioner.id,
         deviceId: device.id,
-        name: String(device.name ?? airconditioner.name ?? ""),
+        name: String(device.name ?? airconditioner.name ?? ''),
         type: adapterType,
         host: device.ip,
         port: toPositiveInt(device.port, CONFIG.airco.defaultPort),
@@ -123,49 +138,45 @@ export class ConfigRepository {
     await database.collection(CONFIG.database.climatezonesCollection).updateOne(
       {
         _id: climatezoneObjectId,
-        "rooms.id": next.roomId,
+        'rooms.id': next.roomId,
       },
       {
         $set: {
-          "rooms.$[room].aircopanels.$[panel].ip": next.wallpanel.host,
-          "rooms.$[room].aircopanels.$[panel].port": next.wallpanel.port,
-          "rooms.$[room].aircopanels.$[panel].ids": next.wallpanel.units.map(
+          'rooms.$[room].aircopanels.$[panel].ip': next.wallpanel.host,
+          'rooms.$[room].aircopanels.$[panel].port': next.wallpanel.port,
+          'rooms.$[room].aircopanels.$[panel].ids': next.wallpanel.units.map(
             (unit) => unit.id,
           ),
-          "rooms.$[room].aircopanels.$[panel].type":
-            next.wallpanel.units[0]?.type ?? "polarbear-v1",
-          "rooms.$[room].aircopanels.$[panel].modbusUnits":
-          next.wallpanel.units,
-          "rooms.$[room].airconditioners.$[airco].deviceType":
-          next.airco.model,
-          "rooms.$[room].airconditioners.$[airco].data.deviceTerminalId":
+          'rooms.$[room].aircopanels.$[panel].type':
+            next.wallpanel.units[0]?.type ?? 'polarbear-v1',
+          'rooms.$[room].aircopanels.$[panel].modbusUnits':
+            next.wallpanel.units,
+          'rooms.$[room].airconditioners.$[airco].deviceType': next.airco.model,
+          'rooms.$[room].airconditioners.$[airco].data.deviceTerminalId':
             String(next.airco.unitId),
-          "rooms.$[room].airconditioners.$[airco].data.type":
-            next.airco.type,
+          'rooms.$[room].airconditioners.$[airco].data.type': next.airco.type,
         },
       },
       {
         arrayFilters: [
-          { "room.id": next.roomId },
-          { "panel.id": next.wallpanel.id },
-          { "airco.id": next.airco.airconditionerId },
+          { 'room.id': next.roomId },
+          { 'panel.id': next.wallpanel.id },
+          { 'airco.id': next.airco.airconditionerId },
         ],
       },
     );
 
-    await database
-      .collection(CONFIG.database.aircoDevicesCollection)
-      .updateOne(
-        { id: next.airco.deviceId },
-        {
-          $set: {
-            ip: next.airco.host,
-            port: String(next.airco.port),
-            type: next.airco.type,
-            bidirectional: next.airco.bidirectional,
-          },
+    await database.collection(CONFIG.database.aircoDevicesCollection).updateOne(
+      { id: next.airco.deviceId },
+      {
+        $set: {
+          ip: next.airco.host,
+          port: String(next.airco.port),
+          type: next.airco.type,
+          bidirectional: next.airco.bidirectional,
         },
-      );
+      },
+    );
 
     return next;
   }
@@ -183,13 +194,15 @@ export class ConfigRepository {
       name: zone.name,
       rooms: (zone.rooms ?? []).map((room) => ({
         id: room.id,
-        name: room.name ?? "",
+        name: room.name ?? '',
         aircopanels: (room.aircopanels ?? []).map((panel) => ({
           ...panel,
           zoneId: zone._id.toHexString(),
           roomId: room.id,
           port: toPositiveInt(panel.port, CONFIG.wallpanel.defaultPort),
-          ids: (panel.ids ?? []).map((id) => toPositiveInt(id, 0)).filter(Boolean),
+          ids: (panel.ids ?? [])
+            .map((id) => toPositiveInt(id, 0))
+            .filter(Boolean),
           modbusUnits: normalizeModbusUnits(panel),
         })),
         airconditioners: (room.airconditioners ?? []).map((airco) => ({
@@ -203,7 +216,9 @@ export class ConfigRepository {
 
   async getEnvironmentDevices(): Promise<unknown[]> {
     return this.getDatabase()
-      .collection<EnvironmentAircoDeviceDocument>(CONFIG.database.aircoDevicesCollection)
+      .collection<EnvironmentAircoDeviceDocument>(
+        CONFIG.database.aircoDevicesCollection,
+      )
       .find({})
       .toArray();
   }
@@ -211,7 +226,7 @@ export class ConfigRepository {
   async addZone(zone: Partial<ClimatezoneDocument>): Promise<unknown> {
     const next = {
       _id: new ObjectId(),
-      name: String(zone.name ?? "New zone"),
+      name: String(zone.name ?? 'New zone'),
       rooms: [] as DbRoom[],
     };
 
@@ -233,12 +248,40 @@ export class ConfigRepository {
       .deleteOne({ _id: new ObjectId(id) });
   }
 
-  async addRoom(
-    room: Partial<DbRoom> & { zoneId: string },
+  async updateZone(
+    id: string,
+    zone: Partial<ClimatezoneDocument>,
   ): Promise<unknown> {
+    const name = String(zone.name ?? '').trim();
+
+    if (!name) {
+      throw new Error('zone name is required');
+    }
+
+    const result = await this.getDatabase()
+      .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
+      .findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: { name } },
+        { returnDocument: 'after' },
+      );
+
+    if (!result) {
+      throw new Error('zone not found');
+    }
+
+    return {
+      id: result._id.toHexString(),
+      _id: result._id.toHexString(),
+      name: result.name,
+      rooms: result.rooms ?? [],
+    };
+  }
+
+  async addRoom(room: Partial<DbRoom> & { zoneId: string }): Promise<unknown> {
     const next: DbRoom = {
       id: String(room.id ?? randomUUID()),
-      name: String(room.name ?? "New room"),
+      name: String(room.name ?? 'New room'),
       airconditioners: [],
       groups: [],
       aircopanels: [],
@@ -246,10 +289,9 @@ export class ConfigRepository {
 
     await this.getDatabase()
       .collection(CONFIG.database.climatezonesCollection)
-      .updateOne(
-        { _id: new ObjectId(room.zoneId) },
-        { $push: { rooms: next } } as any,
-      );
+      .updateOne({ _id: new ObjectId(room.zoneId) }, {
+        $push: { rooms: next },
+      } as any);
 
     return { ...next, zoneId: room.zoneId };
   }
@@ -257,18 +299,51 @@ export class ConfigRepository {
   async deleteRoom(zoneId: string, roomId: string): Promise<void> {
     await this.getDatabase()
       .collection(CONFIG.database.climatezonesCollection)
-      .updateOne(
-        { _id: new ObjectId(zoneId) },
-        { $pull: { rooms: { id: roomId } } } as any,
-      );
+      .updateOne({ _id: new ObjectId(zoneId) }, {
+        $pull: { rooms: { id: roomId } },
+      } as any);
   }
 
-  async addEnvironmentDevice(device: Partial<EnvironmentAircoDeviceDocument>): Promise<unknown> {
+  async updateRoom(
+    zoneId: string,
+    roomId: string,
+    room: Partial<DbRoom>,
+  ): Promise<unknown> {
+    const name = String(room.name ?? '').trim();
+
+    if (!name) {
+      throw new Error('room name is required');
+    }
+
+    const collection = this.getDatabase().collection<ClimatezoneDocument>(
+      CONFIG.database.climatezonesCollection,
+    );
+
+    await collection.updateOne(
+      { _id: new ObjectId(zoneId), 'rooms.id': roomId },
+      { $set: { 'rooms.$.name': name } },
+    );
+
+    const zone = await collection.findOne({ _id: new ObjectId(zoneId) });
+    const updatedRoom = zone?.rooms?.find(
+      (candidate) => candidate.id === roomId,
+    );
+
+    if (!updatedRoom) {
+      throw new Error('room not found');
+    }
+
+    return { ...updatedRoom, zoneId };
+  }
+
+  async addEnvironmentDevice(
+    device: Partial<EnvironmentAircoDeviceDocument>,
+  ): Promise<unknown> {
     const next = {
       id: String(device.id ?? randomUUID()),
-      name: String(device.name ?? "New"),
+      name: String(device.name ?? 'New'),
       type: String(device.type ?? CONFIG.airco.defaultType),
-      ip: String(device.ip ?? ""),
+      ip: String(device.ip ?? ''),
       port: String(device.port ?? CONFIG.airco.defaultPort),
       bidirectional: device.bidirectional !== false,
     };
@@ -293,7 +368,7 @@ export class ConfigRepository {
             name: patch.name,
             type: patch.type,
             ip: patch.ip,
-            port: String(patch.port ?? ""),
+            port: String(patch.port ?? ''),
             bidirectional: patch.bidirectional,
           },
         },
@@ -310,23 +385,28 @@ export class ConfigRepository {
       .deleteOne({ id });
   }
 
-  async addPanel(panel: Partial<DbAircoPanel> & { zoneId: string; roomId: string }): Promise<unknown> {
+  async addPanel(
+    panel: Partial<DbAircoPanel> & { zoneId: string; roomId: string },
+  ): Promise<unknown> {
     const next = this.normalizePanelForDb(panel);
 
     await this.getDatabase()
       .collection(CONFIG.database.climatezonesCollection)
       .updateOne(
-        { _id: new ObjectId(panel.zoneId), "rooms.id": panel.roomId },
-        { $push: { "rooms.$.aircopanels": next } } as any,
+        { _id: new ObjectId(panel.zoneId), 'rooms.id': panel.roomId },
+        { $push: { 'rooms.$.aircopanels': next } } as any,
       );
 
     return { ...next, zoneId: panel.zoneId, roomId: panel.roomId };
   }
 
-  async updatePanel(id: string, panel: Partial<DbAircoPanel>): Promise<unknown> {
+  async updatePanel(
+    id: string,
+    panel: Partial<DbAircoPanel>,
+  ): Promise<unknown> {
     const zones = await this.getDatabase()
       .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
-      .find({ "rooms.aircopanels.id": id })
+      .find({ 'rooms.aircopanels.id': id })
       .toArray();
     const zone = zones[0];
     const room = zone?.rooms?.find((candidate) =>
@@ -343,8 +423,8 @@ export class ConfigRepository {
       .collection(CONFIG.database.climatezonesCollection)
       .updateOne(
         { _id: zone._id },
-        { $set: { "rooms.$[room].aircopanels.$[panel]": next } },
-        { arrayFilters: [{ "room.id": room.id }, { "panel.id": id }] },
+        { $set: { 'rooms.$[room].aircopanels.$[panel]': next } },
+        { arrayFilters: [{ 'room.id': room.id }, { 'panel.id': id }] },
       );
 
     return { ...next, zoneId: zone._id.toHexString(), roomId: room.id };
@@ -353,10 +433,9 @@ export class ConfigRepository {
   async deletePanel(id: string): Promise<void> {
     await this.getDatabase()
       .collection(CONFIG.database.climatezonesCollection)
-      .updateOne(
-        { "rooms.aircopanels.id": id },
-        { $pull: { "rooms.$[].aircopanels": { id } } } as any,
-      );
+      .updateOne({ 'rooms.aircopanels.id': id }, {
+        $pull: { 'rooms.$[].aircopanels': { id } },
+      } as any);
   }
 
   async addAirconditioner(
@@ -367,17 +446,20 @@ export class ConfigRepository {
     await this.getDatabase()
       .collection(CONFIG.database.climatezonesCollection)
       .updateOne(
-        { _id: new ObjectId(airco.zoneId), "rooms.id": airco.roomId },
-        { $push: { "rooms.$.airconditioners": next } } as any,
+        { _id: new ObjectId(airco.zoneId), 'rooms.id': airco.roomId },
+        { $push: { 'rooms.$.airconditioners': next } } as any,
       );
 
     return { ...next, zoneId: airco.zoneId, roomId: airco.roomId };
   }
 
-  async updateAirconditioner(id: string, airco: Partial<DbAirconditioner>): Promise<unknown> {
+  async updateAirconditioner(
+    id: string,
+    airco: Partial<DbAirconditioner>,
+  ): Promise<unknown> {
     const zones = await this.getDatabase()
       .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
-      .find({ "rooms.airconditioners.id": id })
+      .find({ 'rooms.airconditioners.id': id })
       .toArray();
     const zone = zones[0];
     const room = zone?.rooms?.find((candidate) =>
@@ -394,8 +476,8 @@ export class ConfigRepository {
       .collection(CONFIG.database.climatezonesCollection)
       .updateOne(
         { _id: zone._id },
-        { $set: { "rooms.$[room].airconditioners.$[airco]": next } },
-        { arrayFilters: [{ "room.id": room.id }, { "airco.id": id }] },
+        { $set: { 'rooms.$[room].airconditioners.$[airco]': next } },
+        { arrayFilters: [{ 'room.id': room.id }, { 'airco.id': id }] },
       );
 
     return { ...next, zoneId: zone._id.toHexString(), roomId: room.id };
@@ -404,15 +486,14 @@ export class ConfigRepository {
   async deleteAirconditioner(id: string): Promise<void> {
     await this.getDatabase()
       .collection(CONFIG.database.climatezonesCollection)
-      .updateOne(
-        { "rooms.airconditioners.id": id },
-        { $pull: { "rooms.$[].airconditioners": { id } } } as any,
-      );
+      .updateOne({ 'rooms.airconditioners.id': id }, {
+        $pull: { 'rooms.$[].airconditioners': { id } },
+      } as any);
   }
 
   private getDatabase(): Db {
     if (!this.database) {
-      throw new Error("mongodb is not connected");
+      throw new Error('mongodb is not connected');
     }
 
     return this.database;
@@ -423,7 +504,7 @@ export class ConfigRepository {
     const modbusUnits = normalizeModbusUnits({
       id,
       name: panel.name,
-      ip: String(panel.ip ?? ""),
+      ip: String(panel.ip ?? ''),
       type: panel.type,
       port: panel.port ?? CONFIG.wallpanel.defaultPort,
       ids: panel.ids,
@@ -432,24 +513,26 @@ export class ConfigRepository {
 
     return {
       id,
-      name: String(panel.name ?? ""),
-      ip: String(panel.ip ?? ""),
-      type: String(panel.type ?? modbusUnits[0]?.type ?? "moxa"),
-      model: String(panel.model ?? ""),
+      name: String(panel.name ?? ''),
+      ip: String(panel.ip ?? ''),
+      type: String(panel.type ?? modbusUnits[0]?.type ?? 'moxa'),
+      model: String(panel.model ?? ''),
       port: toPositiveInt(panel.port, CONFIG.wallpanel.defaultPort),
       ids: modbusUnits.map((unit) => unit.id),
       modbusUnits,
     };
   }
 
-  private normalizeAirconditionerForDb(airco: Partial<DbAirconditioner>): DbAirconditioner {
+  private normalizeAirconditionerForDb(
+    airco: Partial<DbAirconditioner>,
+  ): DbAirconditioner {
     return {
       ...(airco as DbAirconditioner),
       id: String(airco.id ?? randomUUID()),
-      name: String(airco.name ?? ""),
+      name: String(airco.name ?? ''),
       deviceType: String(airco.deviceType ?? CONFIG.airco.defaultModel),
       data: {
-        deviceId: String(airco.data?.deviceId ?? ""),
+        deviceId: String(airco.data?.deviceId ?? ''),
         type: String(airco.data?.type ?? CONFIG.airco.defaultType),
         deviceTerminalId: String(
           airco.data?.deviceTerminalId ?? CONFIG.airco.defaultUnitId,
@@ -467,7 +550,7 @@ export class ConfigRepository {
     );
 
     if (!room) {
-      throw new Error("no room found with aircopanel and airconditioner ");
+      throw new Error('no room found with aircopanel and airconditioner ');
     }
 
     return room;

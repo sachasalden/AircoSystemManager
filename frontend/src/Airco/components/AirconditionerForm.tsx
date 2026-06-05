@@ -329,16 +329,24 @@ export default function AirconditionerForm({
               maxFanMode,
             })
           }
-          className="btn add-btn"
+          className="action-btn action-btn-primary"
           type="button"
         >
           {submitLabel}
         </button>
-        <button onClick={resetForm} className="btn ghost-btn" type="button">
+        <button
+          onClick={resetForm}
+          className="action-btn action-btn-neutral"
+          type="button"
+        >
           {resetLabel}
         </button>
         {onCancel && (
-          <button onClick={onCancel} className="btn ghost-btn" type="button">
+          <button
+            onClick={onCancel}
+            className="action-btn action-btn-neutral"
+            type="button"
+          >
             Cancel
           </button>
         )}

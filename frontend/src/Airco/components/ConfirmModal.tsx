@@ -26,10 +26,18 @@ export default function ConfirmModal({
         <p>{message}</p>
 
         <div className="wp-modal-actions">
-          <button className="btn ghost-btn" type="button" onClick={onCancel}>
+          <button
+            className="action-btn action-btn-neutral"
+            type="button"
+            onClick={onCancel}
+          >
             Cancel
           </button>
-          <button className="btn add-btn" type="button" onClick={onConfirm}>
+          <button
+            className="action-btn action-btn-danger"
+            type="button"
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </button>
         </div>

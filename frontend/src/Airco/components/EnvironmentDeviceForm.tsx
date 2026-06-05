@@ -76,11 +76,7 @@ export default function EnvironmentDeviceForm({
       </Field>
 
       <Field label="IP">
-        <TextInput
-          value={ip}
-          onChange={setIp}
-          placeholder="192.168.xx.xx"
-        />
+        <TextInput value={ip} onChange={setIp} placeholder="192.168.xx.xx" />
       </Field>
 
       <Field label="Port">
@@ -106,12 +102,16 @@ export default function EnvironmentDeviceForm({
               bidirectional,
             })
           }
-          className="btn add-btn"
+          className="action-btn action-btn-primary"
           type="button"
         >
           Add airco system device
         </button>
-        <button onClick={resetForm} className="btn ghost-btn" type="button">
+        <button
+          onClick={resetForm}
+          className="action-btn action-btn-neutral"
+          type="button"
+        >
           Reset
         </button>
       </FormActions>

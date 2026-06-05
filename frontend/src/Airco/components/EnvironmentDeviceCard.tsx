@@ -37,7 +37,11 @@ export default function EnvironmentDeviceCard({
         </div>
 
         <div className="card-btn-row">
-          <button className="btn ghost-btn" type="button" onClick={onRemove}>
+          <button
+            className="action-btn action-btn-danger"
+            type="button"
+            onClick={onRemove}
+          >
             Remove
           </button>
         </div>

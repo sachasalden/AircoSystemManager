@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { WallpanelDevice, WallpanelUnit, WallpanelVersion } from '../model';
+import type {
+  WallpanelDevice,
+  WallpanelUnit,
+  WallpanelVersion,
+} from '../model';
 import {
   Field,
   NumberInput,
@@ -149,15 +153,19 @@ export default function WallpanelCard({
           <div className="card-actions">
             {!isEditing ? (
               <button
-                className="circle-btn"
+                className="action-btn action-btn-neutral action-btn-small"
                 type="button"
                 onClick={() => setIsEditing(true)}
               >
                 Edit
               </button>
             ) : (
-              <button className="circle-btn" type="button" onClick={cancelEdit}>
-                ✕
+              <button
+                className="action-btn action-btn-neutral action-btn-small"
+                type="button"
+                onClick={cancelEdit}
+              >
+                Close
               </button>
             )}
           </div>
@@ -183,7 +191,11 @@ export default function WallpanelCard({
             </div>
 
             <div className="card-btn-row">
-              <button className="btn ghost-btn" type="button" onClick={onRemove}>
+              <button
+                className="action-btn action-btn-danger"
+                type="button"
+                onClick={onRemove}
+              >
                 Remove
               </button>
             </div>
@@ -221,7 +233,7 @@ export default function WallpanelCard({
                   </SelectInput>
                   <button
                     type="button"
-                    className="btn add-btn"
+                    className="action-btn action-btn-primary"
                     onClick={addEditUnitIds}
                   >
                     Add unit
@@ -238,10 +250,7 @@ export default function WallpanelCard({
                       <SelectInput
                         value={unit.type}
                         onChange={(value) =>
-                          setEditUnitVersion(
-                            unit.id,
-                            value as WallpanelVersion,
-                          )
+                          setEditUnitVersion(unit.id, value as WallpanelVersion)
                         }
                       >
                         <option value="polarbear-v1">polarbear-v1</option>
@@ -249,7 +258,7 @@ export default function WallpanelCard({
                       </SelectInput>
                       <button
                         type="button"
-                        className="btn ghost-btn"
+                        className="action-btn action-btn-danger action-btn-small"
                         onClick={() => removeEditUnitId(unit.id)}
                       >
                         Remove
@@ -261,10 +270,18 @@ export default function WallpanelCard({
             </div>
 
             <div className="card-btn-row">
-              <button className="btn ghost-btn" type="button" onClick={cancelEdit}>
+              <button
+                className="action-btn action-btn-neutral"
+                type="button"
+                onClick={cancelEdit}
+              >
                 Cancel
               </button>
-              <button className="btn add-btn" type="button" onClick={saveEdit}>
+              <button
+                className="action-btn action-btn-primary"
+                type="button"
+                onClick={saveEdit}
+              >
                 Save
               </button>
             </div>

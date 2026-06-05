@@ -23,7 +23,11 @@ export default function TerminalIdsField({
           onChange={onInputChange}
           placeholder="e.g. 1,2,3"
         />
-        <button type="button" className="btn add-btn" onClick={onAdd}>
+        <button
+          type="button"
+          className="action-btn action-btn-primary"
+          onClick={onAdd}
+        >
           Add ID
         </button>
       </div>
@@ -41,7 +45,7 @@ export default function TerminalIdsField({
           <button
             key={terminalId}
             type="button"
-            className="btn ghost-btn"
+            className="action-btn action-btn-danger action-btn-small"
             onClick={() => onRemove(terminalId)}
           >
             Unit {terminalId} ✕

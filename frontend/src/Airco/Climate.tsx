@@ -143,6 +143,28 @@ export default function Climate() {
     }
   }
 
+  async function renameZone(zone: Zone) {
+    const name = window.prompt('Zone name', zone.name)?.trim();
+
+    if (!name || name === zone.name) {
+      return;
+    }
+
+    try {
+      const res = await axios.put(`${API_BASE}/zones/${zone.id}`, { name });
+      const [updatedZone] = normalizeZones([res.data]);
+
+      setZones((prev) =>
+        prev.map((item) =>
+          item.id === zone.id ? { ...item, ...updatedZone } : item,
+        ),
+      );
+    } catch (err) {
+      console.error('Failed to rename zone', err);
+      window.alert('Failed to rename zone');
+    }
+  }
+
   async function addRoom() {
     if (!selectedZoneId) {
       window.alert('Select a zone first.');
@@ -156,9 +178,12 @@ export default function Climate() {
     }
 
     try {
-      const res = await axios.post(`${API_BASE}/zones/${selectedZoneId}/rooms`, {
-        name,
-      });
+      const res = await axios.post(
+        `${API_BASE}/zones/${selectedZoneId}/rooms`,
+        {
+          name,
+        },
+      );
       const room: Room = {
         id: String(res.data.id ?? ''),
         name: String(res.data.name ?? name),
@@ -216,6 +241,38 @@ export default function Climate() {
     }
   }
 
+  async function renameRoom(zoneId: string, room: Room) {
+    const name = window.prompt('Room name', room.name)?.trim();
+
+    if (!name || name === room.name) {
+      return;
+    }
+
+    try {
+      const res = await axios.put(
+        `${API_BASE}/zones/${zoneId}/rooms/${room.id}`,
+        { name },
+      );
+      const nextName = String(res.data.name ?? name);
+
+      setZones((prevZones) =>
+        prevZones.map((zone) =>
+          zone.id !== zoneId
+            ? zone
+            : {
+                ...zone,
+                rooms: zone.rooms.map((item) =>
+                  item.id === room.id ? { ...item, name: nextName } : item,
+                ),
+              },
+        ),
+      );
+    } catch (err) {
+      console.error('Failed to rename room', err);
+      window.alert('Failed to rename room');
+    }
+  }
+
   async function addEnvironmentDevice(value: {
     name: string;
     type: string;
@@ -229,16 +286,13 @@ export default function Climate() {
     }
 
     try {
-      const res = await axios.post(
-        `${API_BASE}/environment-devices`,
-        {
-          name: value.name,
-          type: value.type,
-          ip: value.ip,
-          port: value.port,
-          bidirectional: value.bidirectional,
-        },
-      );
+      const res = await axios.post(`${API_BASE}/environment-devices`, {
+        name: value.name,
+        type: value.type,
+        ip: value.ip,
+        port: value.port,
+        bidirectional: value.bidirectional,
+      });
 
       const normalizedDevice = normalizeEnvironmentDevice(res.data);
 
@@ -422,10 +476,7 @@ export default function Climate() {
     };
 
     try {
-      const res = await axios.post(
-        `${API_BASE}/airco-devices`,
-        device,
-      );
+      const res = await axios.post(`${API_BASE}/airco-devices`, device);
       const normalizedAirco = normalizeAirconditionerDevice(res.data);
 
       setZones((prevZones) =>
@@ -471,10 +522,7 @@ export default function Climate() {
     if (!selectedZoneId || !selectedRoomId) return;
 
     try {
-      const res = await axios.put(
-        `${API_BASE}/devices/${updated.id}`,
-        updated,
-      );
+      const res = await axios.put(`${API_BASE}/devices/${updated.id}`, updated);
 
       const normalizedPanel = normalizeWallpanelDevice(res.data);
 
@@ -577,9 +625,7 @@ export default function Climate() {
     if (!aircoToDelete || !selectedZoneId || !selectedRoomId) return;
 
     try {
-      await axios.delete(
-        `${API_BASE}/airco-devices/${aircoToDelete}`,
-      );
+      await axios.delete(`${API_BASE}/airco-devices/${aircoToDelete}`);
 
       setZones((prevZones) =>
         prevZones.map((zone) =>
@@ -654,13 +700,17 @@ export default function Climate() {
             <h4>Zones</h4>
             <p>Manage climate areas</p>
           </div>
-          <button className="zone-add-btn" type="button" onClick={addZone}>
-            New zone
-          </button>
         </div>
 
         {zones.map((zone) => (
-          <div className="zone-menu-row" key={zone.id}>
+          <div
+            className={`zone-menu-row ${
+              activeView === 'zones' && selectedZoneId === zone.id
+                ? 'active'
+                : ''
+            }`}
+            key={zone.id}
+          >
             <button
               className={`menu-item ${
                 activeView === 'zones' && selectedZoneId === zone.id
@@ -678,7 +728,15 @@ export default function Climate() {
               {zone.name}
             </button>
             <button
-              className="zone-remove-btn"
+              className="action-btn action-btn-neutral action-btn-small"
+              type="button"
+              onClick={() => renameZone(zone)}
+              aria-label={`Edit zone ${zone.name}`}
+            >
+              Edit
+            </button>
+            <button
+              className="action-btn action-btn-danger action-btn-small"
               type="button"
               onClick={() => {
                 setZoneToDelete(zone.id);
@@ -690,6 +748,14 @@ export default function Climate() {
             </button>
           </div>
         ))}
+
+        <button
+          className="action-btn action-btn-primary zone-add-btn-below"
+          type="button"
+          onClick={addZone}
+        >
+          New zone
+        </button>
       </aside>
 
       <div className="climate-content">
@@ -734,24 +800,61 @@ export default function Climate() {
           />
         ) : (
           <>
-            <div className="room-selector">
-              {selectedZone && (
-                <>
-                  <div className="room-selector-header">
-                    <h4 className="room-selector-title">
-                      Rooms in {selectedZone.name}
-                    </h4>
+            {selectedZone && (
+              <section className="management-section">
+                <div className="entity-header">
+                  <div>
+                    <span className="section-eyebrow">Selected zone</span>
+                    <h3>{selectedZone.name}</h3>
+                    <p>{selectedZone.rooms.length} rooms configured</p>
+                  </div>
+
+                  <div className="entity-actions">
                     <button
                       type="button"
-                      className="room-add-btn"
+                      className="action-btn action-btn-neutral"
+                      onClick={() => renameZone(selectedZone)}
+                    >
+                      Edit zone
+                    </button>
+                    <button
+                      type="button"
+                      className="action-btn action-btn-danger"
+                      onClick={() => {
+                        setZoneToDelete(selectedZone.id);
+                        setZoneModalOpen(true);
+                      }}
+                    >
+                      Remove zone
+                    </button>
+                  </div>
+                </div>
+
+                <div className="room-selector">
+                  <div className="section-header">
+                    <div>
+                      <span className="section-eyebrow">Rooms</span>
+                      <h4 className="room-selector-title">
+                        Rooms in {selectedZone.name}
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      className="action-btn action-btn-primary"
                       onClick={addRoom}
                     >
                       New room
                     </button>
                   </div>
+
                   <div className="room-selector-list">
                     {selectedZone.rooms.map((room) => (
-                      <div className="room-chip-wrap" key={room.id}>
+                      <div
+                        className={`room-chip-wrap ${
+                          selectedRoomId === room.id ? 'active' : ''
+                        }`}
+                        key={room.id}
+                      >
                         <button
                           className={`room-chip ${
                             selectedRoomId === room.id ? 'active' : ''
@@ -766,7 +869,15 @@ export default function Climate() {
                           {room.name}
                         </button>
                         <button
-                          className="room-remove-btn"
+                          className="action-btn action-btn-neutral action-btn-small"
+                          type="button"
+                          onClick={() => renameRoom(selectedZone.id, room)}
+                          aria-label={`Edit room ${room.name}`}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="action-btn action-btn-danger action-btn-small"
                           type="button"
                           onClick={() => {
                             setSelectedRoomId(room.id);
@@ -783,128 +894,150 @@ export default function Climate() {
                       <div className="empty">No rooms in this zone yet</div>
                     )}
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+              </section>
+            )}
 
             {selectedRoom ? (
               <>
-                <div
-                  style={{
-                    marginBottom: 12,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <h4 style={{ margin: 0 }}>Wallpanels</h4>
-                  {selectedRoom.aircopanels.length === 0 && (
+                <section className="management-section">
+                  <div className="section-header">
+                    <div>
+                      <span className="section-eyebrow">
+                        {selectedZone?.name} / {selectedRoom.name}
+                      </span>
+                      <h4>Wallpanels</h4>
+                    </div>
+                    <div className="entity-actions">
+                      <button
+                        type="button"
+                        className="action-btn action-btn-neutral"
+                        onClick={() =>
+                          selectedZoneId &&
+                          renameRoom(selectedZoneId, selectedRoom)
+                        }
+                      >
+                        Edit room
+                      </button>
+                      {selectedRoom.aircopanels.length === 0 && (
+                        <button
+                          type="button"
+                          className="action-btn action-btn-primary"
+                          onClick={() =>
+                            setShowWallpanelForm((state) => !state)
+                          }
+                        >
+                          {showWallpanelForm ? 'Close' : 'New wallpanel'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {showWallpanelForm &&
+                    selectedRoom.aircopanels.length === 0 && (
+                      <main
+                        className="climate-panel"
+                        style={{ marginBottom: 24 }}
+                      >
+                        <h5 className="climate-title">
+                          Wallpanel - Add device
+                        </h5>
+
+                        <WallpanelForm
+                          onSubmit={addWallpanel}
+                          onCancel={() => {
+                            setShowWallpanelForm(false);
+                          }}
+                        />
+                      </main>
+                    )}
+
+                  <div className="cards-grid">
+                    {selectedRoom.aircopanels.length === 0 ? (
+                      <div className="climate-panel">
+                        <div className="empty">No wallpanels in this room</div>
+                      </div>
+                    ) : (
+                      selectedRoom.aircopanels.map((panel) => (
+                        <WallpanelCard
+                          key={panel.id}
+                          device={panel}
+                          onRemove={() => {
+                            setPanelToDelete(panel.id);
+                            setModalOpen(true);
+                          }}
+                          onSave={updateWallpanel}
+                        />
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="management-section">
+                  <div className="section-header">
+                    <div>
+                      <span className="section-eyebrow">
+                        {selectedZone?.name} / {selectedRoom.name}
+                      </span>
+                      <h4>Airconditioners</h4>
+                    </div>
                     <button
                       type="button"
-                      className="btn add-btn"
-                      onClick={() => setShowWallpanelForm((state) => !state)}
+                      className="action-btn action-btn-primary"
+                      onClick={() => setShowAircoForm((state) => !state)}
                     >
-                      {showWallpanelForm ? 'Close' : 'New wallpanel'}
+                      {showAircoForm ? 'Close' : 'New AC'}
                     </button>
-                  )}
-                </div>
+                  </div>
 
-                {showWallpanelForm && selectedRoom.aircopanels.length === 0 && (
-                  <main className="climate-panel" style={{ marginBottom: 24 }}>
-                    <h5 className="climate-title">Wallpanel - Add device</h5>
+                  {showAircoForm && (
+                    <main
+                      className="climate-panel"
+                      style={{ marginBottom: 24 }}
+                    >
+                      <h5 className="climate-title">
+                        Airconditioning - Add device
+                      </h5>
 
-                    <WallpanelForm
-                      onSubmit={addWallpanel}
-                      onCancel={() => {
-                        setShowWallpanelForm(false);
-                      }}
-                    />
-                  </main>
-                )}
-
-                <div className="cards-grid">
-                  {selectedRoom.aircopanels.length === 0 ? (
-                    <div className="climate-panel">
-                      <div className="empty">No wallpanels in this room</div>
-                    </div>
-                  ) : (
-                    selectedRoom.aircopanels.map((panel) => (
-                      <WallpanelCard
-                        key={panel.id}
-                        device={panel}
-                        onRemove={() => {
-                          setPanelToDelete(panel.id);
-                          setModalOpen(true);
-                        }}
-                        onSave={updateWallpanel}
-                      />
-                    ))
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 32,
-                    marginBottom: 12,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <h4 style={{ margin: 0 }}>Airconditioners</h4>
-                  <button
-                    type="button"
-                    className="btn add-btn"
-                    onClick={() => setShowAircoForm((state) => !state)}
-                  >
-                    {showAircoForm ? 'Close' : 'New AC'}
-                  </button>
-                </div>
-
-                {showAircoForm && (
-                  <main className="climate-panel" style={{ marginBottom: 24 }}>
-                    <h5 className="climate-title">
-                      Airconditioning - Add device
-                    </h5>
-
-                    <AirconditionerForm
-                      environmentDevices={environmentDevices}
-                      supportedEnvironmentDeviceTypes={
-                        supportedEnvironmentDeviceTypes
-                      }
-                      onSubmit={addAirconditioner}
-                      onCancel={() => {
-                        setShowAircoForm(false);
-                      }}
-                    />
-                  </main>
-                )}
-
-                <div className="cards-grid">
-                  {selectedRoom.airconditioners.length === 0 ? (
-                    <div className="climate-panel">
-                      <div className="empty">
-                        No airconditioners in this room
-                      </div>
-                    </div>
-                  ) : (
-                    selectedRoom.airconditioners.map((airco) => (
-                      <AirconditionerCard
-                        key={airco.id}
-                        device={airco}
+                      <AirconditionerForm
                         environmentDevices={environmentDevices}
                         supportedEnvironmentDeviceTypes={
                           supportedEnvironmentDeviceTypes
                         }
-                        onRemove={() => {
-                          setAircoToDelete(airco.id);
-                          setAircoModalOpen(true);
+                        onSubmit={addAirconditioner}
+                        onCancel={() => {
+                          setShowAircoForm(false);
                         }}
-                        onSave={updateAirconditioner}
                       />
-                    ))
+                    </main>
                   )}
-                </div>
+
+                  <div className="cards-grid">
+                    {selectedRoom.airconditioners.length === 0 ? (
+                      <div className="climate-panel">
+                        <div className="empty">
+                          No airconditioners in this room
+                        </div>
+                      </div>
+                    ) : (
+                      selectedRoom.airconditioners.map((airco) => (
+                        <AirconditionerCard
+                          key={airco.id}
+                          device={airco}
+                          environmentDevices={environmentDevices}
+                          supportedEnvironmentDeviceTypes={
+                            supportedEnvironmentDeviceTypes
+                          }
+                          onRemove={() => {
+                            setAircoToDelete(airco.id);
+                            setAircoModalOpen(true);
+                          }}
+                          onSave={updateAirconditioner}
+                        />
+                      ))
+                    )}
+                  </div>
+                </section>
               </>
             ) : (
               <div className="climate-panel">

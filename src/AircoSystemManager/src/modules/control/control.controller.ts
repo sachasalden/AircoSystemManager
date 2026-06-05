@@ -1,14 +1,33 @@
-import * as mqtt from "mqtt";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { URL } from "node:url";
-import { BAUDRATE_VALUES, CONFIG, TOPICS } from "../../config/runtime.config";
-import { applyCorsHeaders } from "../../middleware/cors.middleware";
-import type { DbAircoPanel, DbAirconditioner, EnvironmentAircoDeviceDocument, PolarbearAdminController, RuntimeSettings, SettingsPatch } from "../../types/shared.types";
-import { formatError, log, normalizeFanMode, parseCommandNumber, round1, toNumber } from "../../utils/helpers";
-import type { AircoAdapterRegistry } from "../airco/airco-adapter-registry";
-import { ConfigService } from "../config/config.service";
-import { CONTROL_PATHS } from "./control.routes";
-import type { NumericState } from "./control.types";
+import * as mqtt from 'mqtt';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
+import { URL } from 'node:url';
+import { BAUDRATE_VALUES, CONFIG, TOPICS } from '../../config/runtime.config';
+import { applyCorsHeaders } from '../../middleware/cors.middleware';
+import type {
+  DbAircoPanel,
+  DbAirconditioner,
+  EnvironmentAircoDeviceDocument,
+  PolarbearAdminController,
+  RuntimeSettings,
+  SettingsPatch,
+} from '../../types/shared.types';
+import {
+  formatError,
+  log,
+  normalizeFanMode,
+  parseCommandNumber,
+  round1,
+  toNumber,
+} from '../../utils/helpers';
+import type { AircoAdapterRegistry } from '../airco/airco-adapter-registry';
+import { ConfigService } from '../config/config.service';
+import { CONTROL_PATHS } from './control.routes';
+import type { NumericState } from './control.types';
 
 export class ControlController {
   private server?: Server;
@@ -45,7 +64,7 @@ export class ControlController {
     });
 
     await new Promise<void>((resolve, reject) => {
-      this.server?.once("error", reject);
+      this.server?.once('error', reject);
       this.server?.listen(CONFIG.control.port, CONFIG.control.host, () => {
         log(
           `control frontend gestart http://${CONFIG.control.host}:${CONFIG.control.port}`,
@@ -76,7 +95,7 @@ export class ControlController {
       const client = mqtt.connect(this.settings.mqtt.broker);
       this.client = client;
 
-      client.once("connect", () => {
+      client.once('connect', () => {
         this.mqttConnected = true;
         log(`control mqtt connected with ${this.settings.mqtt.broker}`);
 
@@ -98,21 +117,21 @@ export class ControlController {
         );
       });
 
-      client.once("error", reject);
+      client.once('error', reject);
 
-      client.on("close", () => {
+      client.on('close', () => {
         this.mqttConnected = false;
       });
 
-      client.on("reconnect", () => {
+      client.on('reconnect', () => {
         this.mqttConnected = false;
       });
 
-      client.on("error", (error) => {
+      client.on('error', (error) => {
         log(`control mqtt error: ${formatError(error)}`);
       });
 
-      client.on("message", (topic, payload) => {
+      client.on('message', (topic, payload) => {
         const value = toNumber(payload);
 
         if (value === null) {
@@ -133,23 +152,27 @@ export class ControlController {
   ): Promise<void> {
     applyCorsHeaders(response);
 
-    if (request.method === "OPTIONS") {
+    if (request.method === 'OPTIONS') {
       response.writeHead(204);
       response.end();
       return;
     }
 
-    const url = new URL(request.url ?? CONTROL_PATHS.root, `http://${request.headers.host ?? "localhost"}`);
+    const url = new URL(
+      request.url ?? CONTROL_PATHS.root,
+      `http://${request.headers.host ?? 'localhost'}`,
+    );
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.root) {
+    if (request.method === 'GET' && url.pathname === CONTROL_PATHS.root) {
       this.sendJson(response, 200, {
         ok: true,
-        message: "WallpanelAircoSync backend active. Use the React frontend from frontend/.",
+        message:
+          'WallpanelAircoSync backend active. Use the React frontend from frontend/.',
       });
       return;
     }
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.status) {
+    if (request.method === 'GET' && url.pathname === CONTROL_PATHS.status) {
       this.sendJson(response, 200, {
         ok: true,
         mqttConnected: this.mqttConnected,
@@ -161,7 +184,7 @@ export class ControlController {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.settings) {
+    if (request.method === 'GET' && url.pathname === CONTROL_PATHS.settings) {
       this.sendJson(response, 200, {
         ok: true,
         settings: await this.configStore.getSettings(),
@@ -169,12 +192,12 @@ export class ControlController {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.devices) {
+    if (request.method === 'GET' && url.pathname === CONTROL_PATHS.devices) {
       this.sendJson(response, 200, await this.configStore.getFrontendZones());
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/zones") {
+    if (request.method === 'POST' && url.pathname === '/zones') {
       this.sendJson(
         response,
         201,
@@ -186,14 +209,26 @@ export class ControlController {
     }
 
     const zoneMatch = url.pathname.match(/^\/zones\/([^/]+)$/);
-    if (zoneMatch && request.method === "DELETE") {
+    if (zoneMatch && request.method === 'PUT') {
+      this.sendJson(
+        response,
+        200,
+        await this.configStore.updateZone(
+          decodeURIComponent(zoneMatch[1]),
+          await this.readJsonRequest<{ name?: string }>(request),
+        ),
+      );
+      return;
+    }
+
+    if (zoneMatch && request.method === 'DELETE') {
       await this.configStore.deleteZone(decodeURIComponent(zoneMatch[1]));
       this.sendJson(response, 200, { ok: true });
       return;
     }
 
     const roomCollectionMatch = url.pathname.match(/^\/zones\/([^/]+)\/rooms$/);
-    if (roomCollectionMatch && request.method === "POST") {
+    if (roomCollectionMatch && request.method === 'POST') {
       this.sendJson(
         response,
         201,
@@ -206,7 +241,20 @@ export class ControlController {
     }
 
     const roomMatch = url.pathname.match(/^\/zones\/([^/]+)\/rooms\/([^/]+)$/);
-    if (roomMatch && request.method === "DELETE") {
+    if (roomMatch && request.method === 'PUT') {
+      this.sendJson(
+        response,
+        200,
+        await this.configStore.updateRoom(
+          decodeURIComponent(roomMatch[1]),
+          decodeURIComponent(roomMatch[2]),
+          await this.readJsonRequest<{ name?: string }>(request),
+        ),
+      );
+      return;
+    }
+
+    if (roomMatch && request.method === 'DELETE') {
       await this.configStore.deleteRoom(
         decodeURIComponent(roomMatch[1]),
         decodeURIComponent(roomMatch[2]),
@@ -215,36 +263,52 @@ export class ControlController {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.environmentDevices) {
-      this.sendJson(response, 200, await this.configStore.getEnvironmentDevices());
+    if (
+      request.method === 'GET' &&
+      url.pathname === CONTROL_PATHS.environmentDevices
+    ) {
+      this.sendJson(
+        response,
+        200,
+        await this.configStore.getEnvironmentDevices(),
+      );
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.environmentDevices) {
+    if (
+      request.method === 'POST' &&
+      url.pathname === CONTROL_PATHS.environmentDevices
+    ) {
       this.sendJson(
         response,
         201,
         await this.configStore.addEnvironmentDevice(
-          await this.readJsonRequest<Partial<EnvironmentAircoDeviceDocument>>(request),
+          await this.readJsonRequest<Partial<EnvironmentAircoDeviceDocument>>(
+            request,
+          ),
         ),
       );
       return;
     }
 
-    const environmentDeviceMatch = url.pathname.match(/^\/environment-devices\/([^/]+)$/);
-    if (environmentDeviceMatch && request.method === "PUT") {
+    const environmentDeviceMatch = url.pathname.match(
+      /^\/environment-devices\/([^/]+)$/,
+    );
+    if (environmentDeviceMatch && request.method === 'PUT') {
       this.sendJson(
         response,
         200,
         await this.configStore.updateEnvironmentDevice(
           decodeURIComponent(environmentDeviceMatch[1]),
-          await this.readJsonRequest<Partial<EnvironmentAircoDeviceDocument>>(request),
+          await this.readJsonRequest<Partial<EnvironmentAircoDeviceDocument>>(
+            request,
+          ),
         ),
       );
       return;
     }
 
-    if (environmentDeviceMatch && request.method === "DELETE") {
+    if (environmentDeviceMatch && request.method === 'DELETE') {
       await this.configStore.deleteEnvironmentDevice(
         decodeURIComponent(environmentDeviceMatch[1]),
       );
@@ -252,7 +316,10 @@ export class ControlController {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.aircoAdapterTypes) {
+    if (
+      request.method === 'GET' &&
+      url.pathname === CONTROL_PATHS.aircoAdapterTypes
+    ) {
       this.sendJson(
         response,
         200,
@@ -261,19 +328,21 @@ export class ControlController {
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.devices) {
+    if (request.method === 'POST' && url.pathname === CONTROL_PATHS.devices) {
       this.sendJson(
         response,
         201,
         await this.configStore.addPanel(
-          await this.readJsonRequest<Partial<DbAircoPanel> & { zoneId: string; roomId: string }>(request),
+          await this.readJsonRequest<
+            Partial<DbAircoPanel> & { zoneId: string; roomId: string }
+          >(request),
         ),
       );
       return;
     }
 
     const panelMatch = url.pathname.match(/^\/devices\/([^/]+)$/);
-    if (panelMatch && request.method === "PUT") {
+    if (panelMatch && request.method === 'PUT') {
       this.sendJson(
         response,
         200,
@@ -285,25 +354,27 @@ export class ControlController {
       return;
     }
 
-    if (panelMatch && request.method === "DELETE") {
+    if (panelMatch && request.method === 'DELETE') {
       await this.configStore.deletePanel(decodeURIComponent(panelMatch[1]));
       this.sendJson(response, 200, { ok: true });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/airco-devices") {
+    if (request.method === 'POST' && url.pathname === '/airco-devices') {
       this.sendJson(
         response,
         201,
         await this.configStore.addAirconditioner(
-          await this.readJsonRequest<Partial<DbAirconditioner> & { zoneId: string; roomId: string }>(request),
+          await this.readJsonRequest<
+            Partial<DbAirconditioner> & { zoneId: string; roomId: string }
+          >(request),
         ),
       );
       return;
     }
 
     const aircoDeviceMatch = url.pathname.match(/^\/airco-devices\/([^/]+)$/);
-    if (aircoDeviceMatch && request.method === "PUT") {
+    if (aircoDeviceMatch && request.method === 'PUT') {
       this.sendJson(
         response,
         200,
@@ -315,8 +386,10 @@ export class ControlController {
       return;
     }
 
-    if (aircoDeviceMatch && request.method === "DELETE") {
-      await this.configStore.deleteAirconditioner(decodeURIComponent(aircoDeviceMatch[1]));
+    if (aircoDeviceMatch && request.method === 'DELETE') {
+      await this.configStore.deleteAirconditioner(
+        decodeURIComponent(aircoDeviceMatch[1]),
+      );
       this.sendJson(response, 200, { ok: true });
       return;
     }
@@ -324,7 +397,7 @@ export class ControlController {
     const wallpanelInsightsMatch = url.pathname.match(
       /^\/wallpanel-insights\/rooms\/([^/]+)\/([^/]+)$/,
     );
-    if (wallpanelInsightsMatch && request.method === "GET") {
+    if (wallpanelInsightsMatch && request.method === 'GET') {
       this.sendJson(response, 200, await this.wallpanelInsightsResponse());
       return;
     }
@@ -332,35 +405,56 @@ export class ControlController {
     const wallpanelStreamMatch = url.pathname.match(
       /^\/wallpanel-insights\/stream\/rooms\/([^/]+)\/([^/]+)$/,
     );
-    if (wallpanelStreamMatch && request.method === "GET") {
-      await this.streamInsights(response, "insights", () => this.wallpanelInsightsResponse());
+    if (wallpanelStreamMatch && request.method === 'GET') {
+      await this.streamInsights(response, 'insights', () =>
+        this.wallpanelInsightsResponse(),
+      );
       return;
     }
 
-    if (request.method === "GET" && url.pathname === CONTROL_PATHS.wallpanelSyncStatus) {
+    if (
+      request.method === 'GET' &&
+      url.pathname === CONTROL_PATHS.wallpanelSyncStatus
+    ) {
       this.sendJson(response, 200, {
         polarbearLoop: {
-          ...(this.polarbearAdmin?.getPolarbearLoopStatus() ?? { paused: false }),
-          running: !(this.polarbearAdmin?.getPolarbearLoopStatus().paused ?? false),
+          ...(this.polarbearAdmin?.getPolarbearLoopStatus() ?? {
+            paused: false,
+          }),
+          running: !(
+            this.polarbearAdmin?.getPolarbearLoopStatus().paused ?? false
+          ),
         },
       });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.wallpanelSyncPause) {
+    if (
+      request.method === 'POST' &&
+      url.pathname === CONTROL_PATHS.wallpanelSyncPause
+    ) {
       const polarbearAdmin = this.getPolarbearAdmin();
       await polarbearAdmin.pausePolarbearLoop();
       this.sendJson(response, 200, {
-        polarbearLoop: { ...polarbearAdmin.getPolarbearLoopStatus(), running: false },
+        polarbearLoop: {
+          ...polarbearAdmin.getPolarbearLoopStatus(),
+          running: false,
+        },
       });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.wallpanelSyncResume) {
+    if (
+      request.method === 'POST' &&
+      url.pathname === CONTROL_PATHS.wallpanelSyncResume
+    ) {
       const polarbearAdmin = this.getPolarbearAdmin();
       await polarbearAdmin.resumePolarbearLoop();
       this.sendJson(response, 200, {
-        polarbearLoop: { ...polarbearAdmin.getPolarbearLoopStatus(), running: true },
+        polarbearLoop: {
+          ...polarbearAdmin.getPolarbearLoopStatus(),
+          running: true,
+        },
       });
       return;
     }
@@ -368,7 +462,7 @@ export class ControlController {
     const wallpanelRebootMatch = url.pathname.match(
       /^\/wallpanel-insights\/panels\/([^/]+)\/reboot$/,
     );
-    if (wallpanelRebootMatch && request.method === "POST") {
+    if (wallpanelRebootMatch && request.method === 'POST') {
       const polarbearAdmin = this.getPolarbearAdmin();
       this.assertPolarbearLoopPaused(polarbearAdmin);
       const { unitIds } = await this.readPolarbearAdminRequest(request, url);
@@ -380,14 +474,17 @@ export class ControlController {
     const wallpanelBaudrateMatch = url.pathname.match(
       /^\/wallpanel-insights\/panels\/([^/]+)\/baudrate$/,
     );
-    if (wallpanelBaudrateMatch && request.method === "POST") {
+    if (wallpanelBaudrateMatch && request.method === 'POST') {
       const polarbearAdmin = this.getPolarbearAdmin();
       this.assertPolarbearLoopPaused(polarbearAdmin);
-      const { unitIds, baudrate } = await this.readPolarbearAdminRequest(request, url);
+      const { unitIds, baudrate } = await this.readPolarbearAdminRequest(
+        request,
+        url,
+      );
 
       if (!baudrate || BAUDRATE_VALUES[baudrate] === undefined) {
         throw new Error(
-          `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(BAUDRATE_VALUES).join(", ")}`,
+          `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(BAUDRATE_VALUES).join(', ')}`,
         );
       }
 
@@ -399,7 +496,7 @@ export class ControlController {
     const aircoInsightsMatch = url.pathname.match(
       /^\/airco-insights\/rooms\/([^/]+)\/([^/]+)$/,
     );
-    if (aircoInsightsMatch && request.method === "GET") {
+    if (aircoInsightsMatch && request.method === 'GET') {
       this.sendJson(response, 200, await this.aircoInsightsResponse());
       return;
     }
@@ -407,22 +504,24 @@ export class ControlController {
     const aircoStreamMatch = url.pathname.match(
       /^\/airco-insights\/stream\/rooms\/([^/]+)\/([^/]+)$/,
     );
-    if (aircoStreamMatch && request.method === "GET") {
-      await this.streamInsights(response, "insights", () => this.aircoInsightsResponse());
+    if (aircoStreamMatch && request.method === 'GET') {
+      await this.streamInsights(response, 'insights', () =>
+        this.aircoInsightsResponse(),
+      );
       return;
     }
 
     const aircoCommandMatch = url.pathname.match(
       /^\/airco-insights\/rooms\/([^/]+)\/([^/]+)\/aircos\/([^/]+)\/commands$/,
     );
-    if (aircoCommandMatch && request.method === "POST") {
+    if (aircoCommandMatch && request.method === 'POST') {
       await this.handleFrontendAircoCommand(request);
       this.sendJson(response, 202, { ok: true });
       return;
     }
 
     if (
-      (request.method === "PATCH" || request.method === "PUT") &&
+      (request.method === 'PATCH' || request.method === 'PUT') &&
       url.pathname === CONTROL_PATHS.settings
     ) {
       const patch = await this.readJsonRequest<SettingsPatch>(request);
@@ -437,7 +536,7 @@ export class ControlController {
     }
 
     if (
-      request.method === "POST" &&
+      request.method === 'POST' &&
       url.pathname === CONTROL_PATHS.polarbearReboot
     ) {
       const polarbearAdmin = this.getPolarbearAdmin();
@@ -448,14 +547,14 @@ export class ControlController {
 
       this.sendJson(response, 202, {
         ok: true,
-        command: "polarbearReboot",
+        command: 'polarbearReboot',
         unitIds,
       });
       return;
     }
 
     if (
-      request.method === "POST" &&
+      request.method === 'POST' &&
       url.pathname === CONTROL_PATHS.polarbearBaudrate
     ) {
       const polarbearAdmin = this.getPolarbearAdmin();
@@ -468,7 +567,7 @@ export class ControlController {
 
       if (!baudrate) {
         throw new Error(
-          `missing baudrate. Supported: ${Object.keys(BAUDRATE_VALUES).join(", ")}`,
+          `missing baudrate. Supported: ${Object.keys(BAUDRATE_VALUES).join(', ')}`,
         );
       }
 
@@ -476,7 +575,7 @@ export class ControlController {
         throw new Error(
           `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(
             BAUDRATE_VALUES,
-          ).join(", ")}`,
+          ).join(', ')}`,
         );
       }
 
@@ -484,7 +583,7 @@ export class ControlController {
 
       this.sendJson(response, 202, {
         ok: true,
-        command: "polarbearBaudrate",
+        command: 'polarbearBaudrate',
         unitIds,
         baudrate,
       });
@@ -492,7 +591,7 @@ export class ControlController {
     }
 
     if (
-      request.method === "POST" &&
+      request.method === 'POST' &&
       url.pathname === CONTROL_PATHS.polarbearPause
     ) {
       const polarbearAdmin = this.getPolarbearAdmin();
@@ -501,14 +600,14 @@ export class ControlController {
 
       this.sendJson(response, 200, {
         ok: true,
-        command: "polarbearLoopPause",
+        command: 'polarbearLoopPause',
         polarbearLoop: polarbearAdmin.getPolarbearLoopStatus(),
       });
       return;
     }
 
     if (
-      request.method === "POST" &&
+      request.method === 'POST' &&
       url.pathname === CONTROL_PATHS.polarbearResume
     ) {
       const polarbearAdmin = this.getPolarbearAdmin();
@@ -517,50 +616,52 @@ export class ControlController {
 
       this.sendJson(response, 200, {
         ok: true,
-        command: "polarbearLoopResume",
+        command: 'polarbearLoopResume',
         polarbearLoop: polarbearAdmin.getPolarbearLoopStatus(),
       });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.setpoint) {
+    if (request.method === 'POST' && url.pathname === CONTROL_PATHS.setpoint) {
       const value = await this.readNumberFromRequest(request, url);
       const temperature = round1(value);
 
       await this.publishCommand(TOPICS.setTemperatureSet, temperature);
       this.sendJson(response, 202, {
         ok: true,
-        command: "setpoint",
+        command: 'setpoint',
         value: temperature,
       });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.fanMode) {
-      const value = normalizeFanMode(await this.readNumberFromRequest(request, url));
+    if (request.method === 'POST' && url.pathname === CONTROL_PATHS.fanMode) {
+      const value = normalizeFanMode(
+        await this.readNumberFromRequest(request, url),
+      );
 
       await this.publishCommand(TOPICS.fanModeSet, value);
       this.sendJson(response, 202, {
         ok: true,
-        command: "fanMode",
+        command: 'fanMode',
         value,
       });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === CONTROL_PATHS.fanSpeed) {
+    if (request.method === 'POST' && url.pathname === CONTROL_PATHS.fanSpeed) {
       const value = Math.round(await this.readNumberFromRequest(request, url));
 
       await this.publishCommand(TOPICS.fanSpeedSet, value);
       this.sendJson(response, 202, {
         ok: true,
-        command: "fanSpeed",
+        command: 'fanSpeed',
         value,
       });
       return;
     }
 
-    this.sendJson(response, 404, { ok: false, error: "not found" });
+    this.sendJson(response, 404, { ok: false, error: 'not found' });
   }
 
   private async wallpanelInsightsResponse(): Promise<unknown> {
@@ -578,13 +679,13 @@ export class ControlController {
           port: settings.wallpanel.port,
           type: settings.wallpanel.units[0]?.type,
           terminalIds: settings.wallpanel.units.map((unit) => unit.id),
-          status: "ok",
+          status: 'ok',
           error: null,
           units: settings.wallpanel.units.map((unit) => ({
             unitId: unit.id,
             zones: unit.zones.map((zone) => ({
               zone,
-              status: "ok",
+              status: 'ok',
               setpoint: state.setpoint?.value,
               virtualTemperature: state.virtualTemp?.value,
               fanSpeed: state.fanSpeed?.value,
@@ -613,11 +714,11 @@ export class ControlController {
           adapterType: settings.airco.type,
           environmentDeviceId: settings.airco.deviceId,
           unitId: settings.airco.unitId,
-          commands: ["setpoint", "fanSpeed", "fanMode"],
+          commands: ['setpoint', 'fanSpeed', 'fanMode'],
           zones: [
             {
               zone: settings.airco.zone,
-              status: "ok",
+              status: 'ok',
               setpoint: state.setpoint?.value,
               virtualTemperature: state.virtualTemp?.value,
               fanSpeed: state.fanSpeed?.value,
@@ -628,7 +729,7 @@ export class ControlController {
                 state.fanSpeed?.updatedAt ??
                 state.fanMode?.updatedAt ??
                 null,
-              commands: ["setpoint", "fanSpeed", "fanMode"],
+              commands: ['setpoint', 'fanSpeed', 'fanMode'],
             },
           ],
         },
@@ -642,9 +743,9 @@ export class ControlController {
     buildPayload: () => Promise<unknown>,
   ): Promise<void> {
     response.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
     });
 
     const send = async () => {
@@ -652,8 +753,10 @@ export class ControlController {
         response.write(`event: ${eventName}\n`);
         response.write(`data: ${JSON.stringify(await buildPayload())}\n\n`);
       } catch (error) {
-        response.write("event: insights-error\n");
-        response.write(`data: ${JSON.stringify({ message: formatError(error) })}\n\n`);
+        response.write('event: insights-error\n');
+        response.write(
+          `data: ${JSON.stringify({ message: formatError(error) })}\n\n`,
+        );
       }
     };
 
@@ -662,10 +765,12 @@ export class ControlController {
       void send();
     }, 2500);
 
-    response.on("close", () => clearInterval(interval));
+    response.on('close', () => clearInterval(interval));
   }
 
-  private async handleFrontendAircoCommand(request: IncomingMessage): Promise<void> {
+  private async handleFrontendAircoCommand(
+    request: IncomingMessage,
+  ): Promise<void> {
     const body = await this.readJsonRequest<{
       property?: string;
       value?: unknown;
@@ -674,20 +779,20 @@ export class ControlController {
     const value = Number(body.value);
 
     if (!Number.isFinite(value)) {
-      throw new Error("missing numeric value");
+      throw new Error('missing numeric value');
     }
 
-    if (body.property === "setpoint") {
+    if (body.property === 'setpoint') {
       await this.publishCommand(TOPICS.setTemperatureSet, round1(value));
       return;
     }
 
-    if (body.property === "fanMode") {
+    if (body.property === 'fanMode') {
       await this.publishCommand(TOPICS.fanModeSet, normalizeFanMode(value));
       return;
     }
 
-    if (body.property === "fanSpeed") {
+    if (body.property === 'fanSpeed') {
       await this.publishCommand(TOPICS.fanSpeedSet, Math.round(value));
       return;
     }
@@ -695,7 +800,10 @@ export class ControlController {
     throw new Error(`unsupported command property: ${body.property}`);
   }
 
-  private readableState(): Record<string, { value: number; updatedAt: string } | null> {
+  private readableState(): Record<
+    string,
+    { value: number; updatedAt: string } | null
+  > {
     return {
       setpoint: this.state[TOPICS.setTemperatureState] ?? null,
       fanMode: this.state[TOPICS.fanModeState] ?? null,
@@ -706,7 +814,7 @@ export class ControlController {
 
   private getPolarbearAdmin(): PolarbearAdminController {
     if (!this.polarbearAdmin) {
-      throw new Error("polarbear admin is not active in this runMode");
+      throw new Error('polarbear admin is not active in this runMode');
     }
 
     return this.polarbearAdmin;
@@ -717,7 +825,7 @@ export class ControlController {
   ): void {
     if (!polarbearAdmin.getPolarbearLoopStatus().paused) {
       throw new Error(
-        "pause the polarbear poll-loop first before rebooting or changing the baudrate ",
+        'pause the polarbear poll-loop first before rebooting or changing the baudrate ',
       );
     }
   }
@@ -736,8 +844,8 @@ export class ControlController {
     const unitIds = this.parseUnitIds(
       body.unitIds ??
         body.ids ??
-        url.searchParams.get("unitIds") ??
-        url.searchParams.get("ids"),
+        url.searchParams.get('unitIds') ??
+        url.searchParams.get('ids'),
       configuredUnitIds,
     );
     const unknownUnitIds = unitIds.filter(
@@ -746,7 +854,7 @@ export class ControlController {
 
     if (unknownUnitIds.length > 0) {
       throw new Error(
-        `unknown polarbear unit-id(s): ${unknownUnitIds.join(", ")}`,
+        `unknown polarbear unit-id(s): ${unknownUnitIds.join(', ')}`,
       );
     }
 
@@ -756,20 +864,20 @@ export class ControlController {
         body.baudrate ??
           body.baudRate ??
           body.value ??
-          url.searchParams.get("baudrate") ??
-          url.searchParams.get("baudRate") ??
-          url.searchParams.get("value"),
+          url.searchParams.get('baudrate') ??
+          url.searchParams.get('baudRate') ??
+          url.searchParams.get('value'),
       ),
     };
   }
 
   private parseUnitIds(value: unknown, fallback: number[]): number[] {
     const rawValues =
-      value === undefined || value === null || value === ""
+      value === undefined || value === null || value === ''
         ? fallback
         : Array.isArray(value)
           ? value
-          : String(value).split(",");
+          : String(value).split(',');
 
     const unitIds = rawValues
       .map((unitId) => Number(unitId))
@@ -778,14 +886,14 @@ export class ControlController {
     const uniqueUnitIds = Array.from(new Set(unitIds));
 
     if (uniqueUnitIds.length === 0) {
-      throw new Error("No valid polarbear units-id has been giving");
+      throw new Error('No valid polarbear units-id has been giving');
     }
 
     return uniqueUnitIds;
   }
 
   private parseOptionalNumber(value: unknown): number | undefined {
-    if (value === undefined || value === null || value === "") {
+    if (value === undefined || value === null || value === '') {
       return undefined;
     }
 
@@ -799,9 +907,9 @@ export class ControlController {
     url: URL,
   ): Promise<number> {
     const queryValue =
-      url.searchParams.get("value") ??
-      url.searchParams.get("temperature") ??
-      url.searchParams.get("setpoint");
+      url.searchParams.get('value') ??
+      url.searchParams.get('temperature') ??
+      url.searchParams.get('setpoint');
 
     if (queryValue !== null) {
       const parsed = Number(queryValue);
@@ -815,7 +923,7 @@ export class ControlController {
     const text = rawBody.trim();
 
     if (!text) {
-      throw new Error("missing numeric value");
+      throw new Error('missing numeric value');
     }
 
     const directNumber = Number(text);
@@ -829,13 +937,13 @@ export class ControlController {
     try {
       json = JSON.parse(text);
     } catch {
-      throw new Error("body must be JSON or a number");
+      throw new Error('body must be JSON or a number');
     }
 
     const value = parseCommandNumber(json);
 
     if (value === null) {
-      throw new Error("missing numeric value");
+      throw new Error('missing numeric value');
     }
 
     return value;
@@ -850,20 +958,20 @@ export class ControlController {
       total += buffer.length;
 
       if (total > CONFIG.control.requestBodyLimitBytes) {
-        throw new Error("request body too large");
+        throw new Error('request body too large');
       }
 
       chunks.push(buffer);
     }
 
-    return Buffer.concat(chunks).toString("utf8");
+    return Buffer.concat(chunks).toString('utf8');
   }
 
   private async readJsonRequest<T>(request: IncomingMessage): Promise<T> {
     const rawBody = await this.readBody(request);
 
     if (!rawBody.trim()) {
-      throw new Error("missing JSON body");
+      throw new Error('missing JSON body');
     }
 
     return JSON.parse(rawBody) as T;
@@ -871,7 +979,7 @@ export class ControlController {
 
   private async publishCommand(topic: string, value: number): Promise<void> {
     if (!this.client || !this.mqttConnected) {
-      throw new Error("mqtt is not connected");
+      throw new Error('mqtt is not connected');
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -901,8 +1009,7 @@ export class ControlController {
       return;
     }
 
-    response.writeHead(statusCode, { "Content-Type": "application/json" });
+    response.writeHead(statusCode, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify(payload, null, 2));
   }
-
 }

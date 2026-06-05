@@ -6,13 +6,14 @@
   padding: 20px;
   min-height: 420px;
   box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-  "Helvetica Neue", Arial;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial;
 }
 
 /* LEFT MENU */
 .side-menu {
-  width: 200px;
+  width: 260px;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   padding: 12px;
@@ -31,7 +32,9 @@
   cursor: pointer;
   color: #e9eef8;
   background: transparent;
-  transition: background 120ms ease, transform 80ms ease;
+  transition:
+    background 120ms ease,
+    transform 80ms ease;
   user-select: none;
   text-align: center;
   border: none;
@@ -49,16 +52,16 @@
 }
 .side-menu .menu-item.active {
   background: linear-gradient(
-          135deg,
-          rgba(255, 255, 255, 0.04),
-          rgba(255, 255, 255, 0.02)
+    135deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.02)
   );
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .side-section-title {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-top: 24px;
@@ -88,10 +91,99 @@
   border: 1px solid rgba(255, 255, 255, 0.055);
 }
 
+.zone-menu-row.active {
+  border-color: rgba(92, 214, 175, 0.32);
+  background: rgba(92, 214, 175, 0.08);
+}
+
 .zone-menu-row .menu-item {
   min-width: 0;
   flex: 1;
   text-align: left;
+}
+
+.zone-add-btn-below {
+  width: 100%;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.action-btn {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #eef8ff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 100ms ease,
+    box-shadow 140ms ease;
+}
+
+.action-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.action-btn-small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 9px;
+}
+
+.action-btn-primary {
+  border-color: rgba(92, 214, 175, 0.28);
+  background: linear-gradient(
+    135deg,
+    rgba(35, 181, 126, 0.18),
+    rgba(75, 156, 255, 0.14)
+  );
+}
+
+.action-btn-primary:hover:not(:disabled) {
+  border-color: rgba(92, 214, 175, 0.62);
+  background: linear-gradient(
+    135deg,
+    rgba(35, 181, 126, 0.34),
+    rgba(75, 156, 255, 0.24)
+  );
+}
+
+.action-btn-neutral {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.action-btn-neutral:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.action-btn-danger {
+  border-color: rgba(255, 120, 94, 0.28);
+  background: rgba(255, 92, 71, 0.15);
+  color: #ffe8e4;
+}
+
+.action-btn-danger:hover:not(:disabled) {
+  border-color: rgba(255, 160, 140, 0.48);
+  background: rgba(255, 92, 71, 0.26);
 }
 
 .zone-add-btn,
@@ -103,9 +195,9 @@
   padding: 0 10px;
   border: 1px solid rgba(92, 214, 175, 0.28);
   background: linear-gradient(
-          135deg,
-          rgba(35, 181, 126, 0.18),
-          rgba(75, 156, 255, 0.14)
+    135deg,
+    rgba(35, 181, 126, 0.18),
+    rgba(75, 156, 255, 0.14)
   );
   color: #eef8ff;
   cursor: pointer;
@@ -118,9 +210,9 @@
 .room-add-btn:hover {
   border-color: rgba(92, 214, 175, 0.62);
   background: linear-gradient(
-          135deg,
-          rgba(35, 181, 126, 0.34),
-          rgba(75, 156, 255, 0.24)
+    135deg,
+    rgba(35, 181, 126, 0.34),
+    rgba(75, 156, 255, 0.24)
   );
 }
 
@@ -155,18 +247,24 @@
   align-items: start;
 }
 
+.cards-grid > * {
+  min-width: 0;
+}
+
 /* Dashboard card look (like screenshot) */
 .climate-card {
   border-radius: 18px;
   padding: 16px;
   background: linear-gradient(
-          180deg,
-          rgba(31, 104, 142, 0.92),
-          rgba(14, 123, 120, 0.78)
+    180deg,
+    rgba(31, 104, 142, 0.92),
+    rgba(14, 123, 120, 0.78)
   );
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #eaf3ff;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .climate-card-inner {
@@ -174,6 +272,7 @@
   padding: 14px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.06);
+  min-width: 0;
 }
 
 /* header */
@@ -206,11 +305,13 @@
   font-size: 16px;
   font-weight: 650;
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 .card-title-text p {
   margin: 2px 0 0 0;
   font-size: 12px;
   color: rgba(234, 243, 255, 0.78);
+  overflow-wrap: anywhere;
 }
 
 .card-actions {
@@ -259,6 +360,10 @@
   margin-top: 10px;
 }
 
+.stats-grid > * {
+  min-width: 0;
+}
+
 .stat-card {
   border-radius: 14px;
   padding: 12px;
@@ -276,14 +381,16 @@
   font-size: 16px;
   font-weight: 700;
   margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Panel under cards (form area) */
 .climate-panel {
   background: linear-gradient(
-          180deg,
-          rgba(255, 255, 255, 0.02),
-          rgba(255, 255, 255, 0.01)
+    180deg,
+    rgba(255, 255, 255, 0.02),
+    rgba(255, 255, 255, 0.01)
   );
   border-radius: 12px;
   padding: 18px;
@@ -296,8 +403,71 @@
   color: #f5f7fb;
 }
 
+.management-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 12px 32px rgba(6, 21, 32, 0.14);
+}
+
+.management-section + .management-section {
+  margin-top: 18px;
+}
+
+.entity-header,
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.entity-header h3,
+.section-header h4 {
+  margin: 0;
+  color: #f5f7fb;
+}
+
+.entity-header h3 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+.entity-header p {
+  margin: 4px 0 0;
+  color: rgba(234, 243, 255, 0.64);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.section-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: rgba(92, 214, 175, 0.78);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.entity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .room-selector {
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .room-selector-title {
@@ -322,50 +492,58 @@
 }
 
 .room-selector-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 10px;
 }
 
 .room-chip-wrap {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px;
-  border-radius: 999px;
+  padding: 7px;
+  border-radius: 14px;
   background: rgba(8, 18, 28, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.room-chip-wrap.active {
+  border-color: rgba(92, 214, 175, 0.48);
+  background: rgba(92, 214, 175, 0.09);
 }
 
 .room-chip {
   appearance: none;
   border: 1px solid rgba(92, 214, 175, 0.42);
-  border-radius: 999px;
+  border-radius: 11px;
   padding: 9px 15px;
+  min-width: 0;
+  flex: 1;
   background: linear-gradient(
-          135deg,
-          rgba(35, 181, 126, 0.24),
-          rgba(75, 156, 255, 0.18)
+    135deg,
+    rgba(35, 181, 126, 0.24),
+    rgba(75, 156, 255, 0.18)
   );
   color: #effff8;
   cursor: pointer;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.01em;
+  text-align: left;
   box-shadow: 0 10px 24px rgba(6, 21, 32, 0.22);
   transition:
-          background 140ms ease,
-          border-color 140ms ease,
-          box-shadow 140ms ease,
-          transform 100ms ease;
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 100ms ease;
 }
 
 .room-chip:hover {
   border-color: rgba(92, 214, 175, 0.76);
   background: linear-gradient(
-          135deg,
-          rgba(35, 181, 126, 0.38),
-          rgba(75, 156, 255, 0.28)
+    135deg,
+    rgba(35, 181, 126, 0.38),
+    rgba(75, 156, 255, 0.28)
   );
   box-shadow: 0 14px 30px rgba(6, 21, 32, 0.3);
   transform: translateY(-1px);
@@ -374,8 +552,8 @@
 .room-chip:focus-visible {
   outline: none;
   box-shadow:
-          0 0 0 3px rgba(92, 214, 175, 0.22),
-          0 14px 30px rgba(6, 21, 32, 0.3);
+    0 0 0 3px rgba(92, 214, 175, 0.22),
+    0 14px 30px rgba(6, 21, 32, 0.3);
 }
 
 .room-chip.active {
@@ -383,8 +561,8 @@
   background: linear-gradient(135deg, #35b57f, #2f93c8);
   color: #ffffff;
   box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.24),
-          0 16px 34px rgba(12, 120, 95, 0.34);
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 16px 34px rgba(12, 120, 95, 0.34);
 }
 
 .room-remove-btn {
@@ -455,6 +633,7 @@
 
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
   grid-column: 1 / -1;
@@ -579,10 +758,10 @@
   font-size: 13px;
   font-weight: 800;
   transition:
-          background 140ms ease,
-          border-color 140ms ease,
-          transform 100ms ease,
-          box-shadow 140ms ease;
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 100ms ease,
+    box-shadow 140ms ease;
 }
 
 .sync-action-btn:hover:not(:disabled),
@@ -693,9 +872,21 @@
 .airco-console {
   overflow: hidden;
   background:
-          radial-gradient(circle at 24% 18%, rgba(72, 171, 255, 0.16), transparent 34%),
-          radial-gradient(circle at 78% 22%, rgba(255, 94, 77, 0.13), transparent 32%),
-          linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+    radial-gradient(
+      circle at 24% 18%,
+      rgba(72, 171, 255, 0.16),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 78% 22%,
+      rgba(255, 94, 77, 0.13),
+      transparent 32%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.035),
+      rgba(255, 255, 255, 0.012)
+    );
 }
 
 .airco-console-header {
@@ -725,9 +916,9 @@
   border-radius: 24px;
   padding: 18px;
   background: linear-gradient(
-          160deg,
-          rgba(15, 34, 48, 0.86),
-          rgba(15, 106, 112, 0.55)
+    160deg,
+    rgba(15, 34, 48, 0.86),
+    rgba(15, 106, 112, 0.55)
   );
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
@@ -763,21 +954,20 @@
   margin: 0 auto 18px auto;
   border-radius: 50%;
   padding: 16px;
-  background:
-          conic-gradient(
-                  from 225deg,
-                  #3b82f6 0%,
-                  #33c7d7 calc(var(--temp-fill) * 0.45),
-                  #f6c445 calc(var(--temp-fill) * 0.72),
-                  #ff5c47 var(--temp-fill),
-                  rgba(255, 255, 255, 0.1) var(--temp-fill),
-                  rgba(255, 255, 255, 0.1) 75%,
-                  transparent 75%,
-                  transparent 100%
-          );
+  background: conic-gradient(
+    from 225deg,
+    #3b82f6 0%,
+    #33c7d7 calc(var(--temp-fill) * 0.45),
+    #f6c445 calc(var(--temp-fill) * 0.72),
+    #ff5c47 var(--temp-fill),
+    rgba(255, 255, 255, 0.1) var(--temp-fill),
+    rgba(255, 255, 255, 0.1) 75%,
+    transparent 75%,
+    transparent 100%
+  );
   box-shadow:
-          inset 0 0 32px rgba(255, 255, 255, 0.06),
-          0 24px 46px rgba(0, 0, 0, 0.28);
+    inset 0 0 32px rgba(255, 255, 255, 0.06),
+    0 24px 46px rgba(0, 0, 0, 0.28);
 }
 
 .temperature-arc-inner {
@@ -787,8 +977,11 @@
   place-items: center;
   align-content: center;
   text-align: center;
-  background:
-          radial-gradient(circle at center, rgba(14, 28, 42, 0.96), rgba(12, 25, 36, 0.92));
+  background: radial-gradient(
+    circle at center,
+    rgba(14, 28, 42, 0.96),
+    rgba(12, 25, 36, 0.92)
+  );
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -923,7 +1116,11 @@
 }
 
 .mode-card.active {
-  background: linear-gradient(145deg, rgba(255, 120, 94, 0.88), rgba(75, 156, 255, 0.72));
+  background: linear-gradient(
+    145deg,
+    rgba(255, 120, 94, 0.88),
+    rgba(75, 156, 255, 0.72)
+  );
   border-color: rgba(255, 255, 255, 0.28);
   box-shadow: 0 14px 26px rgba(255, 92, 71, 0.2);
 }
@@ -931,6 +1128,8 @@
 /* Card buttons row + edit layout */
 .card-btn-row {
   display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }
@@ -954,9 +1153,9 @@
 
 .wp-modal {
   background: linear-gradient(
-          180deg,
-          rgba(31, 104, 142, 0.95),
-          rgba(14, 123, 120, 0.9)
+    180deg,
+    rgba(31, 104, 142, 0.95),
+    rgba(14, 123, 120, 0.9)
   );
   border-radius: 14px;
   padding: 20px;
@@ -1007,9 +1206,19 @@
   }
   .side-menu {
     width: 100%;
-    flex-direction: row;
+    flex-direction: column;
     gap: 6px;
-    overflow-x: auto;
+  }
+  .entity-header,
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .entity-actions {
+    justify-content: flex-start;
+  }
+  .room-selector-list {
+    grid-template-columns: 1fr;
   }
   .climate-panel {
     padding: 12px;
@@ -1047,13 +1256,17 @@
   gap: 22px;
   overflow: hidden;
   background:
-          radial-gradient(circle at 20% 10%, rgba(92, 214, 175, 0.16), transparent 34%),
-          radial-gradient(circle at 82% 18%, rgba(75, 156, 255, 0.16), transparent 34%),
-          linear-gradient(
-                  180deg,
-                  rgba(31, 104, 142, 0.78),
-                  rgba(14, 123, 120, 0.58)
-          );
+    radial-gradient(
+      circle at 20% 10%,
+      rgba(92, 214, 175, 0.16),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 82% 18%,
+      rgba(75, 156, 255, 0.16),
+      transparent 34%
+    ),
+    linear-gradient(180deg, rgba(31, 104, 142, 0.78), rgba(14, 123, 120, 0.58));
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
   color: #eaf3ff;
@@ -1093,16 +1306,15 @@
 .airco-controls-card {
   border-radius: 24px;
   padding: 24px;
-  background:
-          linear-gradient(
-                  180deg,
-                  rgba(255, 255, 255, 0.08),
-                  rgba(255, 255, 255, 0.04)
-          );
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.04)
+  );
   border: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.08),
-          0 18px 46px rgba(0, 0, 0, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 46px rgba(0, 0, 0, 0.2);
   color: #eff8ff;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -1261,8 +1473,8 @@
   padding: 18px;
   margin-top: 16px;
   box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.06),
-          0 10px 24px rgba(6, 21, 32, 0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 24px rgba(6, 21, 32, 0.18);
 }
 
 .airco-control-block h4 {
@@ -1283,33 +1495,31 @@
 .mode-card {
   border: 1px solid rgba(92, 214, 175, 0.28);
   border-radius: 14px;
-  background:
-          linear-gradient(
-                  135deg,
-                  rgba(35, 181, 126, 0.18),
-                  rgba(75, 156, 255, 0.14)
-          );
+  background: linear-gradient(
+    135deg,
+    rgba(35, 181, 126, 0.18),
+    rgba(75, 156, 255, 0.14)
+  );
   color: #ffffff;
   padding: 12px 16px;
   cursor: pointer;
   transition:
-          transform 0.2s ease,
-          background 0.2s ease,
-          border-color 0.2s ease,
-          box-shadow 0.2s ease,
-          opacity 0.2s ease;
+    transform 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .fan-chip:hover,
 .mode-card:hover {
   transform: translateY(-1px);
   border-color: rgba(92, 214, 175, 0.65);
-  background:
-          linear-gradient(
-                  135deg,
-                  rgba(35, 181, 126, 0.32),
-                  rgba(75, 156, 255, 0.24)
-          );
+  background: linear-gradient(
+    135deg,
+    rgba(35, 181, 126, 0.32),
+    rgba(75, 156, 255, 0.24)
+  );
   box-shadow: 0 12px 24px rgba(6, 21, 32, 0.24);
 }
 
@@ -1326,8 +1536,8 @@
   border-color: rgba(92, 214, 175, 0.95);
   color: #ffffff;
   box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.22),
-          0 16px 34px rgba(12, 120, 95, 0.32);
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 16px 34px rgba(12, 120, 95, 0.32);
 }
 
 .mode-card {

@@ -116,7 +116,11 @@ export default function WallpanelForm({
             <option value="polarbear-v1">polarbear-v1</option>
             <option value="polarbear-v3">polarbear-v3</option>
           </SelectInput>
-          <button type="button" className="btn add-btn" onClick={addUnitIds}>
+          <button
+            type="button"
+            className="action-btn action-btn-primary"
+            onClick={addUnitIds}
+          >
             Add unit
           </button>
         </div>
@@ -137,7 +141,7 @@ export default function WallpanelForm({
               </SelectInput>
               <button
                 type="button"
-                className="btn ghost-btn"
+                className="action-btn action-btn-danger action-btn-small"
                 onClick={() => removeUnitId(unit.id)}
               >
                 Remove
@@ -157,16 +161,24 @@ export default function WallpanelForm({
               modbusUnits,
             })
           }
-          className="btn add-btn"
+          className="action-btn action-btn-primary"
           type="button"
         >
           {submitLabel}
         </button>
-        <button onClick={resetForm} className="btn ghost-btn" type="button">
+        <button
+          onClick={resetForm}
+          className="action-btn action-btn-neutral"
+          type="button"
+        >
           {resetLabel}
         </button>
         {onCancel && (
-          <button onClick={onCancel} className="btn ghost-btn" type="button">
+          <button
+            onClick={onCancel}
+            className="action-btn action-btn-neutral"
+            type="button"
+          >
             Cancel
           </button>
         )}
