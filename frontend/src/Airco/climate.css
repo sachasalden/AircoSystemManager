@@ -746,6 +746,15 @@
   box-shadow: 0 0 0 4px rgba(246, 196, 69, 0.16);
 }
 
+.sync-pill.inactive {
+  border-color: rgba(159, 176, 211, 0.4);
+}
+
+.sync-pill.inactive .sync-dot {
+  background: #9fb0d3;
+  box-shadow: 0 0 0 4px rgba(159, 176, 211, 0.14);
+}
+
 .sync-action-btn,
 .wallpanel-admin-btn {
   min-height: 36px;

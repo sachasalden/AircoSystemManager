@@ -1,40 +1,132 @@
-import { CONFIG } from "./config/runtime.config";
-import { ControlController } from "./modules/control/control.controller";
-import { ConfigService } from "./modules/config/config.service";
-import { AircoMqttBridgeService } from "./modules/airco/airco-mqtt-bridge.service";
-import { createDefaultAircoAdapterRegistry } from "./modules/airco/register-airco-adapters";
-import { WallpanelPollerService } from "./modules/polarbear/wallpanel-poller.service";
-import { formatError, log } from "./utils/helpers";
+import { CONFIG } from './config/runtime.config';
+import { ControlController } from './modules/control/control.controller';
+import { ConfigService } from './modules/config/config.service';
+import { AircoMqttBridgeService } from './modules/airco/airco-mqtt-bridge.service';
+import { createDefaultAircoAdapterRegistry } from './modules/airco/register-airco-adapters';
+import { WallpanelPollerService } from './modules/polarbear/wallpanel-poller.service';
+import type {
+  PolarbearInsightSnapshot,
+  PolarbearAdminController,
+  SyncRoomRef,
+} from './types/shared.types';
+import { formatError, log } from './utils/helpers';
 
 let configStore: ConfigService | null = null;
-let wallpanelPoller: WallpanelPollerService | null = null;
-let aircoBridge: AircoMqttBridgeService | null = null;
+let wallpanelPollers: WallpanelPollerService[] = [];
+let aircoBridges: AircoMqttBridgeService[] = [];
 let controlServer: ControlController | null = null;
+
+class MultiRoomPolarbearAdmin implements PolarbearAdminController {
+  constructor(private pollers: WallpanelPollerService[]) {}
+
+  getPolarbearLoopStatus(room?: SyncRoomRef): { paused: boolean } {
+    const pollers = this.getTargetPollers(room);
+
+    return {
+      paused:
+        pollers.length > 0 &&
+        pollers.every((poller) => poller.getPolarbearLoopStatus().paused),
+    };
+  }
+
+  getPolarbearInsights(room?: SyncRoomRef): PolarbearInsightSnapshot[] {
+    return this.getTargetPollers(room).flatMap((poller) =>
+      poller.getPolarbearInsights(),
+    );
+  }
+
+  rememberMqttCommand(
+    property: 'setpoint' | 'fanMode' | 'fanSpeed',
+    value: number,
+    room?: SyncRoomRef,
+  ): void {
+    for (const poller of this.getTargetPollers(room)) {
+      poller.rememberMqttCommand(property, value);
+    }
+  }
+
+  async pausePolarbearLoop(room?: SyncRoomRef): Promise<void> {
+    await Promise.all(
+      this.getTargetPollers(room).map((poller) => poller.pausePolarbearLoop()),
+    );
+  }
+
+  async resumePolarbearLoop(room?: SyncRoomRef): Promise<void> {
+    await Promise.all(
+      this.getTargetPollers(room).map((poller) => poller.resumePolarbearLoop()),
+    );
+  }
+
+  async rebootPolarbears(unitIds: number[], room?: SyncRoomRef): Promise<void> {
+    await Promise.all(
+      this.getTargetPollers(room).map((poller) =>
+        poller.rebootPolarbears(unitIds),
+      ),
+    );
+  }
+
+  async setPolarbearBaudrate(
+    unitIds: number[],
+    baudrate: number,
+    room?: SyncRoomRef,
+  ): Promise<void> {
+    await Promise.all(
+      this.getTargetPollers(room).map((poller) =>
+        poller.setPolarbearBaudrate(unitIds, baudrate),
+      ),
+    );
+  }
+
+  private getTargetPollers(room?: SyncRoomRef): WallpanelPollerService[] {
+    if (!room) {
+      return this.pollers;
+    }
+
+    const pollers = this.pollers.filter((poller) =>
+      poller.matchesRoom(room.zoneId, room.roomId),
+    );
+
+    if (pollers.length === 0) {
+      throw new Error(
+        `no active polarbear sync for zone=${room.zoneId} room=${room.roomId}`,
+      );
+    }
+
+    return pollers;
+  }
+}
 
 export const start = async (): Promise<void> => {
   const tasks: Promise<void>[] = [];
 
   configStore = new ConfigService();
   await configStore.connect();
-  const settings = await configStore.loadRuntimeSettings();
+  const settingsList = await configStore.getAllSettings();
   const aircoAdapterRegistry = createDefaultAircoAdapterRegistry();
 
-  wallpanelPoller =
-    CONFIG.runMode === "both" || CONFIG.runMode === "polarbearPublisher"
-      ? new WallpanelPollerService(settings)
-      : null;
+  log(`loaded ${settingsList.length} room sync config(s) from mongodb`);
 
-  aircoBridge =
-    CONFIG.runMode === "both" || CONFIG.runMode === "aircoBridge"
-      ? new AircoMqttBridgeService(settings, aircoAdapterRegistry)
-      : null;
+  wallpanelPollers =
+    CONFIG.runMode === 'both' || CONFIG.runMode === 'polarbearPublisher'
+      ? settingsList.map((settings) => new WallpanelPollerService(settings))
+      : [];
+
+  aircoBridges =
+    CONFIG.runMode === 'both' || CONFIG.runMode === 'aircoBridge'
+      ? settingsList.map(
+          (settings) =>
+            new AircoMqttBridgeService(settings, aircoAdapterRegistry),
+        )
+      : [];
 
   controlServer = CONFIG.control.enabled
     ? new ControlController(
         configStore,
         aircoAdapterRegistry,
-        settings,
-        wallpanelPoller ?? undefined,
+        settingsList[0],
+        wallpanelPollers.length > 0
+          ? new MultiRoomPolarbearAdmin(wallpanelPollers)
+          : undefined,
       )
     : null;
 
@@ -42,11 +134,11 @@ export const start = async (): Promise<void> => {
     await controlServer.start();
   }
 
-  if (aircoBridge) {
+  for (const aircoBridge of aircoBridges) {
     await aircoBridge.start();
   }
 
-  if (wallpanelPoller) {
+  for (const wallpanelPoller of wallpanelPollers) {
     tasks.push(wallpanelPoller.start());
   }
 
@@ -56,13 +148,13 @@ export const start = async (): Promise<void> => {
 };
 
 export const stop = async (): Promise<void> => {
-  log("shutdown gestart");
+  log('shutdown gestart');
 
-  if (wallpanelPoller) {
+  for (const wallpanelPoller of wallpanelPollers) {
     await wallpanelPoller.stop();
   }
 
-  if (aircoBridge) {
+  for (const aircoBridge of aircoBridges) {
     await aircoBridge.stop();
   }
 
@@ -73,15 +165,18 @@ export const stop = async (): Promise<void> => {
   if (configStore) {
     await configStore.close();
   }
+
+  wallpanelPollers = [];
+  aircoBridges = [];
 };
 
 export async function startWithShutdownHandlers(): Promise<void> {
-  process.once("SIGINT", async () => {
+  process.once('SIGINT', async () => {
     await stop();
     process.exit(0);
   });
 
-  process.once("SIGTERM", async () => {
+  process.once('SIGTERM', async () => {
     await stop();
     process.exit(0);
   });

@@ -1,7 +1,7 @@
-import type { FlagType, Zone } from "../types/shared.types";
+import type { FlagType, RuntimeSettings, Zone } from '../types/shared.types';
 
 export const CONFIG = {
-  runMode: "both" as "both" | "polarbearPublisher" | "aircoBridge",
+  runMode: 'both' as 'both' | 'polarbearPublisher' | 'aircoBridge',
 
   wallpanel: {
     defaultPort: 4001,
@@ -22,8 +22,8 @@ export const CONFIG = {
     defaultPort: 502,
     defaultUnitId: 1,
     defaultZone: 1 as Zone,
-    defaultType: "HeinAndHopmanIpSystem",
-    defaultModel: "FC-3000DC/FC-3500DC",
+    defaultType: 'HeinAndHopmanIpSystem',
+    defaultModel: 'FC-3000DC/FC-3500DC',
 
     virtualTempPollIntervalMs: 2000,
     requestTimeoutMs: 5000,
@@ -31,7 +31,7 @@ export const CONFIG = {
 
   mqtt: {
     broker: process.env.MQTT_BROKER,
-    topicBase: process.env.MQTT_TOPIC_BASE ?? "polarbears/wallpanel/airco",
+    topicBase: process.env.MQTT_TOPIC_BASE ?? 'polarbears/wallpanel/airco',
 
     retainCommands: false,
     retainStates: true,
@@ -39,7 +39,7 @@ export const CONFIG = {
 
   control: {
     enabled: true,
-    host: "0.0.0.0",
+    host: '0.0.0.0',
     port: 8088,
     requestBodyLimitBytes: 32 * 1024,
   },
@@ -47,12 +47,12 @@ export const CONFIG = {
   database: {
     uri:
       process.env.MONGO_URI ??
-      "mongodb://wallpanel:wallpanel@localhost:27017/wallpanel_sync?authSource=admin",
-    name: process.env.MONGO_DB ?? "wallpanel_sync",
+      'mongodb://wallpanel:wallpanel@localhost:27017/wallpanel_sync?authSource=admin',
+    name: process.env.MONGO_DB ?? 'wallpanel_sync',
     climatezonesCollection:
-      process.env.MONGO_CLIMATEZONES_COLLECTION ?? "Climatezones",
+      process.env.MONGO_CLIMATEZONES_COLLECTION ?? 'Climatezones',
     aircoDevicesCollection:
-      process.env.MONGO_AIRCO_DEVICES_COLLECTION ?? "enviormentsaircodevices",
+      process.env.MONGO_AIRCO_DEVICES_COLLECTION ?? 'enviormentsaircodevices',
   },
 };
 
@@ -107,3 +107,25 @@ export const TOPICS = {
   virtualTempState: `${CONFIG.mqtt.topicBase}/virtualTemp/state`,
 };
 
+export type MqttTopics = typeof TOPICS;
+
+export const createTopics = (
+  settings?: Pick<RuntimeSettings, 'climatezoneId' | 'roomId'>,
+): MqttTopics => {
+  const topicBase = settings
+    ? `${CONFIG.mqtt.topicBase}/${settings.climatezoneId}/${settings.roomId}`
+    : CONFIG.mqtt.topicBase;
+
+  return {
+    setTemperatureSet: `${topicBase}/setTemperature/set`,
+    setTemperatureState: `${topicBase}/setTemperature/state`,
+
+    fanModeSet: `${topicBase}/fanMode/set`,
+    fanModeState: `${topicBase}/fanMode/state`,
+
+    fanSpeedSet: `${topicBase}/fanSpeed/set`,
+    fanSpeedState: `${topicBase}/fanSpeed/state`,
+
+    virtualTempState: `${topicBase}/virtualTemp/state`,
+  };
+};

@@ -1,11 +1,26 @@
-import * as mqtt from "mqtt";
-import { CONFIG, TOPICS } from "../../config/runtime.config";
-import type { RuntimeSettings } from "../../types/shared.types";
-import { formatError, isTimeoutError, log, normalizeFanMode, round1, roundHalf, sleep, toNumber, virtualTempSignature } from "../../utils/helpers";
-import type { AircoAdapter } from "./airco-adapter";
-import type { AircoAdapterRegistry } from "./airco-adapter-registry";
+import * as mqtt from 'mqtt';
+import {
+  CONFIG,
+  createTopics,
+  type MqttTopics,
+} from '../../config/runtime.config';
+import type { RuntimeSettings } from '../../types/shared.types';
+import {
+  formatError,
+  isTimeoutError,
+  log,
+  normalizeFanMode,
+  round1,
+  roundHalf,
+  sleep,
+  toNumber,
+  virtualTempSignature,
+} from '../../utils/helpers';
+import type { AircoAdapter } from './airco-adapter';
+import type { AircoAdapterRegistry } from './airco-adapter-registry';
 
 export class AircoMqttBridgeService {
+  private topics: MqttTopics;
   private client?: mqtt.MqttClient;
   private airco: AircoAdapter;
 
@@ -16,6 +31,7 @@ export class AircoMqttBridgeService {
     private settings: RuntimeSettings,
     registry: AircoAdapterRegistry,
   ) {
+    this.topics = createTopics(settings);
     this.airco = registry.create(settings.airco.type, {
       host: settings.airco.host,
       port: settings.airco.port,
@@ -36,7 +52,7 @@ export class AircoMqttBridgeService {
     await this.connectMqtt();
 
     log(
-      `airco mqtt bridge started type=${this.settings.airco.type} airco=${this.settings.airco.host}:${this.settings.airco.port}`,
+      `airco mqtt bridge started type=${this.settings.airco.type} airco=${this.settings.airco.host}:${this.settings.airco.port} commandTopic=${this.topics.setTemperatureSet}`,
     );
 
     void this.virtualTempLoop();
@@ -59,32 +75,38 @@ export class AircoMqttBridgeService {
       const client = mqtt.connect(this.settings.mqtt.broker);
       this.client = client;
 
-      client.once("connect", () => {
+      client.once('connect', () => {
         log(`airco bridge mqtt connected with ${this.settings.mqtt.broker}`);
 
         client.subscribe(
-          [TOPICS.setTemperatureSet, TOPICS.fanModeSet, TOPICS.fanSpeedSet],
+          [
+            this.topics.setTemperatureSet,
+            this.topics.fanModeSet,
+            this.topics.fanSpeedSet,
+          ],
           (error) => {
             if (error) {
               reject(error);
               return;
             }
 
-            log("airco bridge subscribes on command topics");
+            log('airco bridge subscribes on command topics');
             resolve();
           },
         );
       });
 
-      client.once("error", reject);
+      client.once('error', reject);
 
-      client.on("error", (error) => {
+      client.on('error', (error) => {
         log(`airco bridge mqtt error: ${formatError(error)}`);
       });
 
-      client.on("message", (topic, payload) => {
+      client.on('message', (topic, payload) => {
         this.handleMessage(topic, payload).catch((error) => {
-          log(`airco bridge message error topic=${topic}: ${formatError(error)}`);
+          log(
+            `airco bridge message error topic=${topic}: ${formatError(error)}`,
+          );
         });
       });
     });
@@ -98,17 +120,17 @@ export class AircoMqttBridgeService {
       return;
     }
 
-    if (topic === TOPICS.setTemperatureSet) {
+    if (topic === this.topics.setTemperatureSet) {
       await this.handleSetTemperature(value);
       return;
     }
 
-    if (topic === TOPICS.fanModeSet) {
+    if (topic === this.topics.fanModeSet) {
       await this.handleFanMode(value);
       return;
     }
 
-    if (topic === TOPICS.fanSpeedSet) {
+    if (topic === this.topics.fanSpeedSet) {
       await this.handleFanSpeed(value);
       return;
     }
@@ -127,7 +149,7 @@ export class AircoMqttBridgeService {
       ),
     );
 
-    this.publishState(TOPICS.setTemperatureState, temperature);
+    this.publishState(this.topics.setTemperatureState, temperature);
   }
 
   private async handleFanMode(value: number): Promise<void> {
@@ -143,7 +165,7 @@ export class AircoMqttBridgeService {
       ),
     );
 
-    this.publishState(TOPICS.fanModeState, fanMode);
+    this.publishState(this.topics.fanModeState, fanMode);
   }
 
   private async handleFanSpeed(value: number): Promise<void> {
@@ -157,7 +179,7 @@ export class AircoMqttBridgeService {
       ),
     );
 
-    this.publishState(TOPICS.fanSpeedState, value);
+    this.publishState(this.topics.fanSpeedState, value);
   }
 
   private async virtualTempLoop(): Promise<void> {
@@ -173,7 +195,7 @@ export class AircoMqttBridgeService {
 
         if (signature !== this.lastVirtualTempSignature) {
           this.lastVirtualTempSignature = signature;
-          this.publishState(TOPICS.virtualTempState, rounded);
+          this.publishState(this.topics.virtualTempState, rounded);
         }
       } catch (error) {
         log(`airco virtualTemp lezen mislukt: ${formatError(error)}`);
@@ -196,7 +218,7 @@ export class AircoMqttBridgeService {
       await task();
     } catch (error) {
       if (isTimeoutError(error)) {
-        log("airco write timeout, maybe received");
+        log('airco write timeout, maybe received');
         return;
       }
 

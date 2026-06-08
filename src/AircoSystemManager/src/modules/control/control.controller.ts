@@ -6,15 +6,23 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { URL } from 'node:url';
-import { BAUDRATE_VALUES, CONFIG, TOPICS } from '../../config/runtime.config';
+import {
+  BAUDRATE_VALUES,
+  CONFIG,
+  TOPICS,
+  createTopics,
+  type MqttTopics,
+} from '../../config/runtime.config';
 import { applyCorsHeaders } from '../../middleware/cors.middleware';
 import type {
   DbAircoPanel,
   DbAirconditioner,
   EnvironmentAircoDeviceDocument,
+  PolarbearInsightSnapshot,
   PolarbearAdminController,
   RuntimeSettings,
   SettingsPatch,
+  SyncRoomRef,
 } from '../../types/shared.types';
 import {
   formatError,
@@ -91,6 +99,22 @@ export class ControlController {
   }
 
   private async connectMqtt(): Promise<void> {
+    const settingsList = await this.configStore.getAllSettings();
+    const subscribedTopics = Array.from(
+      new Set(
+        settingsList.flatMap((settings) => {
+          const topics = createTopics(settings);
+
+          return [
+            topics.setTemperatureState,
+            topics.fanModeState,
+            topics.fanSpeedState,
+            topics.virtualTempState,
+          ];
+        }),
+      ),
+    );
+
     await new Promise<void>((resolve, reject) => {
       const client = mqtt.connect(this.settings.mqtt.broker);
       this.client = client;
@@ -99,22 +123,17 @@ export class ControlController {
         this.mqttConnected = true;
         log(`control mqtt connected with ${this.settings.mqtt.broker}`);
 
-        client.subscribe(
-          [
-            TOPICS.setTemperatureState,
-            TOPICS.fanModeState,
-            TOPICS.fanSpeedState,
-            TOPICS.virtualTempState,
-          ],
-          (error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
+        client.subscribe(subscribedTopics, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
 
-            resolve();
-          },
-        );
+          log(
+            `control subscribes on ${subscribedTopics.length} room state topic(s)`,
+          );
+          resolve();
+        });
       });
 
       client.once('error', reject);
@@ -398,7 +417,14 @@ export class ControlController {
       /^\/wallpanel-insights\/rooms\/([^/]+)\/([^/]+)$/,
     );
     if (wallpanelInsightsMatch && request.method === 'GET') {
-      this.sendJson(response, 200, await this.wallpanelInsightsResponse());
+      this.sendJson(
+        response,
+        200,
+        await this.wallpanelInsightsResponse(
+          decodeURIComponent(wallpanelInsightsMatch[1]),
+          decodeURIComponent(wallpanelInsightsMatch[2]),
+        ),
+      );
       return;
     }
 
@@ -407,8 +433,88 @@ export class ControlController {
     );
     if (wallpanelStreamMatch && request.method === 'GET') {
       await this.streamInsights(response, 'insights', () =>
-        this.wallpanelInsightsResponse(),
+        this.wallpanelInsightsResponse(
+          decodeURIComponent(wallpanelStreamMatch[1]),
+          decodeURIComponent(wallpanelStreamMatch[2]),
+        ),
       );
+      return;
+    }
+
+    const wallpanelRoomSyncMatch = url.pathname.match(
+      /^\/wallpanel-insights\/rooms\/([^/]+)\/([^/]+)\/sync\/(status|pause|resume)$/,
+    );
+    if (wallpanelRoomSyncMatch) {
+      const room = {
+        zoneId: decodeURIComponent(wallpanelRoomSyncMatch[1]),
+        roomId: decodeURIComponent(wallpanelRoomSyncMatch[2]),
+      };
+      const action = wallpanelRoomSyncMatch[3];
+
+      if (request.method === 'GET' && action === 'status') {
+        this.sendJson(response, 200, {
+          polarbearLoop: this.polarbearLoopStatus(room),
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && action === 'pause') {
+        const polarbearAdmin = this.getPolarbearAdmin();
+        await polarbearAdmin.pausePolarbearLoop(room);
+        this.sendJson(response, 200, {
+          polarbearLoop: this.polarbearLoopStatus(room),
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && action === 'resume') {
+        const polarbearAdmin = this.getPolarbearAdmin();
+        await polarbearAdmin.resumePolarbearLoop(room);
+        this.sendJson(response, 200, {
+          polarbearLoop: this.polarbearLoopStatus(room),
+        });
+        return;
+      }
+    }
+
+    const wallpanelRoomPanelAdminMatch = url.pathname.match(
+      /^\/wallpanel-insights\/rooms\/([^/]+)\/([^/]+)\/panels\/([^/]+)\/(reboot|baudrate)$/,
+    );
+    if (wallpanelRoomPanelAdminMatch && request.method === 'POST') {
+      const room = {
+        zoneId: decodeURIComponent(wallpanelRoomPanelAdminMatch[1]),
+        roomId: decodeURIComponent(wallpanelRoomPanelAdminMatch[2]),
+      };
+      const action = wallpanelRoomPanelAdminMatch[4];
+      const polarbearAdmin = this.getPolarbearAdmin();
+
+      this.assertPolarbearLoopPaused(polarbearAdmin, room);
+
+      if (action === 'reboot') {
+        const { unitIds } = await this.readPolarbearAdminRequest(
+          request,
+          url,
+          room,
+        );
+        await polarbearAdmin.rebootPolarbears(unitIds, room);
+        this.sendJson(response, 202, { ok: true, unitIds });
+        return;
+      }
+
+      const { unitIds, baudrate } = await this.readPolarbearAdminRequest(
+        request,
+        url,
+        room,
+      );
+
+      if (!baudrate || BAUDRATE_VALUES[baudrate] === undefined) {
+        throw new Error(
+          `Unsupported baudrate: ${baudrate}. Supported: ${Object.keys(BAUDRATE_VALUES).join(', ')}`,
+        );
+      }
+
+      await polarbearAdmin.setPolarbearBaudrate(unitIds, baudrate, room);
+      this.sendJson(response, 202, { ok: true, unitIds, baudrate });
       return;
     }
 
@@ -497,7 +603,14 @@ export class ControlController {
       /^\/airco-insights\/rooms\/([^/]+)\/([^/]+)$/,
     );
     if (aircoInsightsMatch && request.method === 'GET') {
-      this.sendJson(response, 200, await this.aircoInsightsResponse());
+      this.sendJson(
+        response,
+        200,
+        await this.aircoInsightsResponse(
+          decodeURIComponent(aircoInsightsMatch[1]),
+          decodeURIComponent(aircoInsightsMatch[2]),
+        ),
+      );
       return;
     }
 
@@ -506,7 +619,10 @@ export class ControlController {
     );
     if (aircoStreamMatch && request.method === 'GET') {
       await this.streamInsights(response, 'insights', () =>
-        this.aircoInsightsResponse(),
+        this.aircoInsightsResponse(
+          decodeURIComponent(aircoStreamMatch[1]),
+          decodeURIComponent(aircoStreamMatch[2]),
+        ),
       );
       return;
     }
@@ -515,7 +631,11 @@ export class ControlController {
       /^\/airco-insights\/rooms\/([^/]+)\/([^/]+)\/aircos\/([^/]+)\/commands$/,
     );
     if (aircoCommandMatch && request.method === 'POST') {
-      await this.handleFrontendAircoCommand(request);
+      await this.handleFrontendAircoCommand(
+        request,
+        decodeURIComponent(aircoCommandMatch[1]),
+        decodeURIComponent(aircoCommandMatch[2]),
+      );
       this.sendJson(response, 202, { ok: true });
       return;
     }
@@ -625,8 +745,10 @@ export class ControlController {
     if (request.method === 'POST' && url.pathname === CONTROL_PATHS.setpoint) {
       const value = await this.readNumberFromRequest(request, url);
       const temperature = round1(value);
+      const topics = createTopics(this.settings);
 
-      await this.publishCommand(TOPICS.setTemperatureSet, temperature);
+      await this.publishCommand(topics.setTemperatureSet, temperature);
+      this.rememberPolarbearCommand('setpoint', temperature);
       this.sendJson(response, 202, {
         ok: true,
         command: 'setpoint',
@@ -639,8 +761,10 @@ export class ControlController {
       const value = normalizeFanMode(
         await this.readNumberFromRequest(request, url),
       );
+      const topics = createTopics(this.settings);
 
-      await this.publishCommand(TOPICS.fanModeSet, value);
+      await this.publishCommand(topics.fanModeSet, value);
+      this.rememberPolarbearCommand('fanMode', value);
       this.sendJson(response, 202, {
         ok: true,
         command: 'fanMode',
@@ -651,8 +775,10 @@ export class ControlController {
 
     if (request.method === 'POST' && url.pathname === CONTROL_PATHS.fanSpeed) {
       const value = Math.round(await this.readNumberFromRequest(request, url));
+      const topics = createTopics(this.settings);
 
-      await this.publishCommand(TOPICS.fanSpeedSet, value);
+      await this.publishCommand(topics.fanSpeedSet, value);
+      this.rememberPolarbearCommand('fanSpeed', value);
       this.sendJson(response, 202, {
         ok: true,
         command: 'fanSpeed',
@@ -664,9 +790,18 @@ export class ControlController {
     this.sendJson(response, 404, { ok: false, error: 'not found' });
   }
 
-  private async wallpanelInsightsResponse(): Promise<unknown> {
-    const settings = await this.configStore.getSettings();
-    const state = this.readableState();
+  private async wallpanelInsightsResponse(
+    zoneId: string,
+    roomId: string,
+  ): Promise<unknown> {
+    const settings = await this.getSettingsForRoomOrNull(zoneId, roomId);
+
+    if (!settings) {
+      return this.wallpanelInsightsFallbackResponse(zoneId, roomId);
+    }
+
+    const state = this.readableState(createTopics(settings));
+    const snapshots = this.polarbearInsights({ zoneId, roomId });
 
     return {
       roomName: settings.roomName,
@@ -683,23 +818,45 @@ export class ControlController {
           error: null,
           units: settings.wallpanel.units.map((unit) => ({
             unitId: unit.id,
-            zones: unit.zones.map((zone) => ({
-              zone,
-              status: 'ok',
-              setpoint: state.setpoint?.value,
-              virtualTemperature: state.virtualTemp?.value,
-              fanSpeed: state.fanSpeed?.value,
-              fanMode: state.fanMode?.value,
-            })),
+            zones: unit.zones.map((zone) => {
+              const snapshot = snapshots.find(
+                (candidate) =>
+                  candidate.unitId === unit.id && candidate.zone === zone,
+              );
+
+              return {
+                zone,
+                status: 'ok',
+                setpoint: snapshot?.setpoint ?? state.setpoint?.value,
+                virtualTemperature:
+                  snapshot?.virtualTemperature ?? state.virtualTemp?.value,
+                fanSpeed: snapshot?.fanSpeed ?? state.fanSpeed?.value,
+                fanMode: snapshot?.fanMode ?? state.fanMode?.value,
+              };
+            }),
           })),
         },
       ],
     };
   }
 
-  private async aircoInsightsResponse(): Promise<unknown> {
-    const settings = await this.configStore.getSettings();
-    const state = this.readableState();
+  private async aircoInsightsResponse(
+    zoneId: string,
+    roomId: string,
+  ): Promise<unknown> {
+    const settings = await this.getSettingsForRoomOrNull(zoneId, roomId);
+
+    if (!settings) {
+      return this.aircoInsightsFallbackResponse(zoneId, roomId);
+    }
+
+    const state = this.readableState(createTopics(settings));
+    const snapshot = this.polarbearInsights({ zoneId, roomId }).find(
+      (candidate) =>
+        candidate.unitId === settings.airco.unitId &&
+        candidate.zone === settings.airco.zone,
+    );
+    const snapshotUpdatedAt = snapshot?.updatedAt;
 
     return {
       zoneId: settings.climatezoneId,
@@ -719,11 +876,33 @@ export class ControlController {
             {
               zone: settings.airco.zone,
               status: 'ok',
-              setpoint: state.setpoint?.value,
-              virtualTemperature: state.virtualTemp?.value,
-              fanSpeed: state.fanSpeed?.value,
-              fanMode: state.fanMode?.value,
+              setpoint: this.newestInsightValue(
+                snapshot?.setpoint,
+                snapshotUpdatedAt,
+                state.setpoint,
+              ),
+              virtualTemperature: this.newestInsightValue(
+                snapshot?.virtualTemperature,
+                snapshotUpdatedAt,
+                state.virtualTemp,
+              ),
+              fanSpeed: this.newestInsightValue(
+                snapshot?.fanSpeed,
+                snapshotUpdatedAt,
+                state.fanSpeed,
+              ),
+              fanMode: this.newestInsightValue(
+                snapshot?.fanMode,
+                snapshotUpdatedAt,
+                state.fanMode,
+              ),
               updatedAt:
+                this.newestInsightUpdatedAt(snapshotUpdatedAt, [
+                  state.setpoint,
+                  state.virtualTemp,
+                  state.fanSpeed,
+                  state.fanMode,
+                ]) ??
                 state.setpoint?.updatedAt ??
                 state.virtualTemp?.updatedAt ??
                 state.fanSpeed?.updatedAt ??
@@ -735,6 +914,37 @@ export class ControlController {
         },
       ],
     };
+  }
+
+  private newestInsightValue(
+    snapshotValue: number | undefined,
+    snapshotUpdatedAt: string | undefined,
+    mqttState: NumericState | null,
+  ): number | undefined {
+    if (snapshotValue === undefined) {
+      return mqttState?.value;
+    }
+
+    if (!mqttState) {
+      return snapshotValue;
+    }
+
+    if (!snapshotUpdatedAt) {
+      return mqttState.value;
+    }
+
+    return Date.parse(mqttState.updatedAt) >= Date.parse(snapshotUpdatedAt)
+      ? mqttState.value
+      : snapshotValue;
+  }
+
+  private newestInsightUpdatedAt(
+    snapshotUpdatedAt: string | undefined,
+    mqttStates: Array<NumericState | null>,
+  ): string | undefined {
+    return [snapshotUpdatedAt, ...mqttStates.map((state) => state?.updatedAt)]
+      .filter((value): value is string => typeof value === 'string')
+      .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
   }
 
   private async streamInsights(
@@ -770,6 +980,8 @@ export class ControlController {
 
   private async handleFrontendAircoCommand(
     request: IncomingMessage,
+    zoneId: string,
+    roomId: string,
   ): Promise<void> {
     const body = await this.readJsonRequest<{
       property?: string;
@@ -777,39 +989,205 @@ export class ControlController {
       zone?: unknown;
     }>(request);
     const value = Number(body.value);
+    const settings = await this.getSettingsForRoom(zoneId, roomId);
+    const topics = createTopics(settings);
 
     if (!Number.isFinite(value)) {
       throw new Error('missing numeric value');
     }
 
     if (body.property === 'setpoint') {
-      await this.publishCommand(TOPICS.setTemperatureSet, round1(value));
+      const temperature = round1(value);
+
+      await this.publishCommand(topics.setTemperatureSet, temperature);
+      this.rememberPolarbearCommand('setpoint', temperature, { zoneId, roomId });
       return;
     }
 
     if (body.property === 'fanMode') {
-      await this.publishCommand(TOPICS.fanModeSet, normalizeFanMode(value));
+      const fanMode = normalizeFanMode(value);
+
+      await this.publishCommand(topics.fanModeSet, fanMode);
+      this.rememberPolarbearCommand('fanMode', fanMode, { zoneId, roomId });
       return;
     }
 
     if (body.property === 'fanSpeed') {
-      await this.publishCommand(TOPICS.fanSpeedSet, Math.round(value));
+      const fanSpeed = Math.round(value);
+
+      await this.publishCommand(topics.fanSpeedSet, fanSpeed);
+      this.rememberPolarbearCommand('fanSpeed', fanSpeed, { zoneId, roomId });
       return;
     }
 
     throw new Error(`unsupported command property: ${body.property}`);
   }
 
-  private readableState(): Record<
-    string,
-    { value: number; updatedAt: string } | null
-  > {
+  private readableState(
+    topics: MqttTopics = TOPICS,
+  ): Record<string, { value: number; updatedAt: string } | null> {
     return {
-      setpoint: this.state[TOPICS.setTemperatureState] ?? null,
-      fanMode: this.state[TOPICS.fanModeState] ?? null,
-      fanSpeed: this.state[TOPICS.fanSpeedState] ?? null,
-      virtualTemp: this.state[TOPICS.virtualTempState] ?? null,
+      setpoint: this.state[topics.setTemperatureState] ?? null,
+      fanMode: this.state[topics.fanModeState] ?? null,
+      fanSpeed: this.state[topics.fanSpeedState] ?? null,
+      virtualTemp: this.state[topics.virtualTempState] ?? null,
     };
+  }
+
+  private rememberPolarbearCommand(
+    property: 'setpoint' | 'fanMode' | 'fanSpeed',
+    value: number,
+    room?: SyncRoomRef,
+  ): void {
+    if (!this.polarbearAdmin) {
+      return;
+    }
+
+    try {
+      this.polarbearAdmin.rememberMqttCommand(property, value, room);
+    } catch (error) {
+      log(
+        `polarbear command remember failed property=${property}: ${formatError(error)}`,
+      );
+    }
+  }
+
+  private polarbearLoopStatus(room?: SyncRoomRef): {
+    paused: boolean;
+    running: boolean;
+    error?: string;
+  } {
+    try {
+      const status = this.polarbearAdmin?.getPolarbearLoopStatus(room) ?? {
+        paused: false,
+      };
+
+      return {
+        ...status,
+        running: !status.paused && !!this.polarbearAdmin,
+      };
+    } catch (error) {
+      return {
+        paused: false,
+        running: false,
+        error: formatError(error),
+      };
+    }
+  }
+
+  private polarbearInsights(room: SyncRoomRef): PolarbearInsightSnapshot[] {
+    try {
+      return this.polarbearAdmin?.getPolarbearInsights(room) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async wallpanelInsightsFallbackResponse(
+    zoneId: string,
+    roomId: string,
+  ): Promise<unknown> {
+    const room = await this.getFrontendRoom(zoneId, roomId);
+
+    return {
+      roomName: room?.name ?? '',
+      generatedAt: new Date().toISOString(),
+      panels: (room?.aircopanels ?? []).map((panel: any) => {
+        const units = Array.isArray(panel.modbusUnits)
+          ? panel.modbusUnits
+          : (panel.ids ?? panel.terminalIds ?? []).map((id: unknown) => ({
+              id,
+              zones: [1],
+            }));
+
+        return {
+          panelId: String(panel.id ?? ''),
+          name: String(panel.name ?? 'Wallpanel'),
+          ip: String(panel.ip ?? ''),
+          port: Number(panel.port ?? 0),
+          type: panel.type,
+          terminalIds: units.map((unit: any) => Number(unit.id)),
+          status: 'error',
+          error:
+            'No active sync config for this room. Add a wallpanel, airconditioner and linked system device.',
+          units: units.map((unit: any) => ({
+            unitId: Number(unit.id),
+            zones: (Array.isArray(unit.zones) ? unit.zones : [1]).map(
+              (zone: unknown) => ({
+                zone: Number(zone) === 2 ? 2 : 1,
+                status: 'error',
+                error: 'Sync not active for this room',
+              }),
+            ),
+          })),
+        };
+      }),
+    };
+  }
+
+  private async aircoInsightsFallbackResponse(
+    zoneId: string,
+    roomId: string,
+  ): Promise<unknown> {
+    const room = await this.getFrontendRoom(zoneId, roomId);
+
+    return {
+      zoneId,
+      roomId,
+      roomName: room?.name ?? '',
+      generatedAt: new Date().toISOString(),
+      aircos: (room?.airconditioners ?? []).map((airco: any) => ({
+        aircoId: String(airco.id ?? ''),
+        name: String(airco.name ?? 'Airconditioning'),
+        deviceType: String(airco.deviceType ?? ''),
+        adapterType: String(airco.data?.type ?? ''),
+        environmentDeviceId: String(airco.data?.deviceId ?? ''),
+        unitId: Number(airco.data?.deviceTerminalId ?? 0) || null,
+        commands: ['setpoint', 'fanSpeed', 'fanMode'],
+        zones: [
+          {
+            zone: 1,
+            status: 'error',
+            error:
+              'No active sync config for this room. Check the linked system device.',
+            updatedAt: null,
+            commands: ['setpoint', 'fanSpeed', 'fanMode'],
+          },
+        ],
+      })),
+    };
+  }
+
+  private async getFrontendRoom(zoneId: string, roomId: string): Promise<any> {
+    const zones = (await this.configStore.getFrontendZones()) as any[];
+    const zone = zones.find((candidate) => candidate.id === zoneId);
+
+    return zone?.rooms?.find((candidate: any) => candidate.id === roomId);
+  }
+
+  private async getSettingsForRoomOrNull(
+    zoneId: string,
+    roomId: string,
+  ): Promise<RuntimeSettings | null> {
+    return (
+      (await this.configStore.getAllSettings()).find(
+        (candidate) =>
+          candidate.climatezoneId === zoneId && candidate.roomId === roomId,
+      ) ?? null
+    );
+  }
+
+  private async getSettingsForRoom(
+    zoneId: string,
+    roomId: string,
+  ): Promise<RuntimeSettings> {
+    const settings = await this.getSettingsForRoomOrNull(zoneId, roomId);
+
+    if (!settings) {
+      throw new Error(`no sync config found for zone=${zoneId} room=${roomId}`);
+    }
+
+    return settings;
   }
 
   private getPolarbearAdmin(): PolarbearAdminController {
@@ -822,8 +1200,9 @@ export class ControlController {
 
   private assertPolarbearLoopPaused(
     polarbearAdmin: PolarbearAdminController,
+    room?: SyncRoomRef,
   ): void {
-    if (!polarbearAdmin.getPolarbearLoopStatus().paused) {
+    if (!polarbearAdmin.getPolarbearLoopStatus(room).paused) {
       throw new Error(
         'pause the polarbear poll-loop first before rebooting or changing the baudrate ',
       );
@@ -833,13 +1212,16 @@ export class ControlController {
   private async readPolarbearAdminRequest(
     request: IncomingMessage,
     url: URL,
+    room?: SyncRoomRef,
   ): Promise<{ unitIds: number[]; baudrate?: number }> {
     const rawBody = await this.readBody(request);
     const body = rawBody.trim()
       ? (JSON.parse(rawBody) as Record<string, unknown>)
       : {};
 
-    const settings = await this.configStore.getSettings();
+    const settings = room
+      ? await this.getSettingsForRoom(room.zoneId, room.roomId)
+      : await this.configStore.getSettings();
     const configuredUnitIds = settings.wallpanel.units.map((unit) => unit.id);
     const unitIds = this.parseUnitIds(
       body.unitIds ??

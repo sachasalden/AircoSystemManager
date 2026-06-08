@@ -1,7 +1,7 @@
-import type { ObjectId } from "mongodb";
+import type { ObjectId } from 'mongodb';
 
 export type Zone = 1 | 2;
-export type FlagType = "setpoint" | "fanMode";
+export type FlagType = 'setpoint' | 'fanMode';
 
 export type Unit = {
   id: number;
@@ -19,45 +19,45 @@ export type VirtualTemperatureTarget = {
 
 export type Candidate =
   | {
-  type: "setpoint";
-  sourceUnitId: number;
-  zone: Zone;
-  value: number;
-  signature: string;
-  changedAt: number;
-  createdAt: number;
-}
+      type: 'setpoint';
+      sourceUnitId: number;
+      zone: Zone;
+      value: number;
+      signature: string;
+      changedAt: number;
+      createdAt: number;
+    }
   | {
-  type: "fanMode";
-  sourceUnitId: number;
-  zone: Zone;
-  fanMode: number;
-  fanSpeed: number;
-  signature: string;
-  changedAt: number;
-  createdAt: number;
-};
+      type: 'fanMode';
+      sourceUnitId: number;
+      zone: Zone;
+      fanMode: number;
+      fanSpeed: number;
+      signature: string;
+      changedAt: number;
+      createdAt: number;
+    };
 
 export type MqttWallpanelCommand =
   | {
-  type: "setpoint";
-  zone: Zone;
-  value: number;
-  signature: string;
-  createdAt: number;
-}
+      type: 'setpoint';
+      zone: Zone;
+      value: number;
+      signature: string;
+      createdAt: number;
+    }
   | {
-  type: "fanMode";
-  zone: Zone;
-  value: number;
-  createdAt: number;
-}
+      type: 'fanMode';
+      zone: Zone;
+      value: number;
+      createdAt: number;
+    }
   | {
-  type: "fanSpeed";
-  zone: Zone;
-  value: number;
-  createdAt: number;
-};
+      type: 'fanSpeed';
+      zone: Zone;
+      value: number;
+      createdAt: number;
+    };
 
 export type SetpointCache = {
   value: number;
@@ -83,7 +83,7 @@ export type AircoConnection = {
   fanspeedSetPointAddress?: string | number;
 };
 
-export type RegisterType = "readInput" | "readHold" | "writeHold";
+export type RegisterType = 'readInput' | 'readHold' | 'writeHold';
 
 export type DbModbusUnit = {
   id: number | string;
@@ -186,12 +186,14 @@ export type SettingsPatch = Partial<{
   wallpanel: Partial<{
     host: string;
     port: number | string;
-    units: Array<Partial<{
-      id: number | string;
-      name: string;
-      type: string;
-      zones: Array<number | string>;
-    }>>;
+    units: Array<
+      Partial<{
+        id: number | string;
+        name: string;
+        type: string;
+        zones: Array<number | string>;
+      }>
+    >;
   }>;
   airco: Partial<{
     type: string;
@@ -203,12 +205,37 @@ export type SettingsPatch = Partial<{
   }>;
 }>;
 
+export type SyncRoomRef = {
+  zoneId: string;
+  roomId: string;
+};
+
+export type PolarbearInsightSnapshot = {
+  unitId: number;
+  zone: Zone;
+  setpoint?: number;
+  virtualTemperature?: number;
+  fanSpeed?: number;
+  fanMode?: number;
+  updatedAt?: string;
+};
+
 export type PolarbearAdminController = {
-  getPolarbearLoopStatus: () => { paused: boolean };
-  pausePolarbearLoop: () => Promise<void>;
-  resumePolarbearLoop: () => Promise<void>;
-  rebootPolarbears: (unitIds: number[]) => Promise<void>;
-  setPolarbearBaudrate: (unitIds: number[], baudrate: number) => Promise<void>;
+  getPolarbearLoopStatus: (room?: SyncRoomRef) => { paused: boolean };
+  getPolarbearInsights: (room?: SyncRoomRef) => PolarbearInsightSnapshot[];
+  rememberMqttCommand: (
+    property: 'setpoint' | 'fanMode' | 'fanSpeed',
+    value: number,
+    room?: SyncRoomRef,
+  ) => void;
+  pausePolarbearLoop: (room?: SyncRoomRef) => Promise<void>;
+  resumePolarbearLoop: (room?: SyncRoomRef) => Promise<void>;
+  rebootPolarbears: (unitIds: number[], room?: SyncRoomRef) => Promise<void>;
+  setPolarbearBaudrate: (
+    unitIds: number[],
+    baudrate: number,
+    room?: SyncRoomRef,
+  ) => Promise<void>;
 };
 
 export type PolarbearMqttHandlers = {
@@ -220,4 +247,3 @@ export type PolarbearMqttHandlers = {
   onFanModeState: (value: number) => void;
   onFanSpeedState: (value: number) => void;
 };
-

@@ -53,6 +53,7 @@ export type InsightResponse = {
 export type PolarbearLoopStatus = {
   paused: boolean;
   running: boolean;
+  error?: string;
   queuedAircoMessages?: number;
 };
 

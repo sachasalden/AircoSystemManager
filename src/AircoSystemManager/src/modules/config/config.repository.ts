@@ -45,44 +45,84 @@ export class ConfigRepository {
   }
 
   async getSettings(): Promise<RuntimeSettings> {
+    const [settings] = await this.getAllSettings();
+
+    if (!settings) {
+      throw new Error('no room found with aircopanel and airconditioner ');
+    }
+
+    return settings;
+  }
+
+  async getAllSettings(): Promise<RuntimeSettings[]> {
     const database = this.getDatabase();
-    const climatezone = await database
+    const climatezones = await database
       .collection<ClimatezoneDocument>(CONFIG.database.climatezonesCollection)
-      .findOne({ 'rooms.aircopanels.0': { $exists: true } });
-
-    if (!climatezone) {
-      throw new Error('no climatezone found with aircopanel ');
-    }
-
-    const room = this.findConfigRoom(climatezone);
-    const panel = room.aircopanels?.[0];
-    const airconditioner = room.airconditioners?.[0];
-
-    if (!panel) {
-      throw new Error('no aircopanel found in climatezone room');
-    }
-
-    if (!airconditioner?.data?.deviceId) {
-      throw new Error('no airconditioner deviceId found in climatezone room ');
-    }
-
-    const device = await database
+      .find({ 'rooms.aircopanels.0': { $exists: true } })
+      .toArray();
+    const environmentDevices = await database
       .collection<EnvironmentAircoDeviceDocument>(
         CONFIG.database.aircoDevicesCollection,
       )
-      .findOne({ id: airconditioner.data.deviceId });
+      .find({})
+      .toArray();
+    const devicesById = new Map(
+      environmentDevices.map((device) => [device.id, device]),
+    );
+    const settings: RuntimeSettings[] = [];
 
-    if (!device) {
-      throw new Error(
-        `no airco device found for id=${airconditioner.data.deviceId}`,
-      );
+    for (const climatezone of climatezones) {
+      for (const room of climatezone.rooms ?? []) {
+        const panel = room.aircopanels?.[0];
+        const airconditioner = room.airconditioners?.find(
+          (candidate) => !!candidate.data?.deviceId,
+        );
+
+        if (!panel || !airconditioner?.data?.deviceId) {
+          continue;
+        }
+
+        const device = devicesById.get(airconditioner.data.deviceId);
+
+        if (!device) {
+          log(
+            `room skipped missing environment device zone=${climatezone._id.toHexString()} room=${room.id} deviceId=${airconditioner.data.deviceId}`,
+          );
+          continue;
+        }
+
+        settings.push(
+          this.buildRuntimeSettings(
+            climatezone,
+            room,
+            panel,
+            airconditioner,
+            device,
+          ),
+        );
+      }
     }
 
+    if (settings.length === 0) {
+      throw new Error('no room found with aircopanel and airconditioner ');
+    }
+
+    return settings;
+  }
+
+  private buildRuntimeSettings(
+    climatezone: ClimatezoneDocument,
+    room: DbRoom,
+    panel: DbAircoPanel,
+    airconditioner: DbAirconditioner,
+    device: EnvironmentAircoDeviceDocument,
+  ): RuntimeSettings {
     const units = normalizeModbusUnits(panel);
 
     const zone = units[0]?.zones[0] ?? CONFIG.airco.defaultZone;
+    const aircoData = airconditioner.data ?? {};
     const adapterType =
-      String(device.type ?? airconditioner.data.type ?? '').trim() ||
+      String(device.type ?? aircoData.type ?? '').trim() ||
       CONFIG.airco.defaultType;
 
     return {
@@ -115,16 +155,16 @@ export class ConfigRepository {
         port: toPositiveInt(device.port, CONFIG.airco.defaultPort),
         model: String(airconditioner.deviceType ?? CONFIG.airco.defaultModel),
         unitId: toPositiveInt(
-          airconditioner.data.deviceTerminalId,
+          aircoData.deviceTerminalId,
           CONFIG.airco.defaultUnitId,
         ),
         zone,
         bidirectional: device.bidirectional !== false,
-        roomTemparatureAddress: airconditioner.data.roomTemparatureAddress,
+        roomTemparatureAddress: aircoData.roomTemparatureAddress,
         roomTemparatureSetPointAddress:
-          airconditioner.data.roomTemparatureSetPointAddress,
-        fanspeedAddress: airconditioner.data.fanspeedAddress,
-        fanspeedSetPointAddress: airconditioner.data.fanspeedSetPointAddress,
+          aircoData.roomTemparatureSetPointAddress,
+        fanspeedAddress: aircoData.fanspeedAddress,
+        fanspeedSetPointAddress: aircoData.fanspeedSetPointAddress,
       },
     };
   }
@@ -540,20 +580,6 @@ export class ConfigRepository {
         ...airco.data,
       },
     };
-  }
-
-  private findConfigRoom(climatezone: ClimatezoneDocument): DbRoom {
-    const room = climatezone.rooms?.find(
-      (candidate) =>
-        (candidate.aircopanels?.length ?? 0) > 0 &&
-        (candidate.airconditioners?.length ?? 0) > 0,
-    );
-
-    if (!room) {
-      throw new Error('no room found with aircopanel and airconditioner ');
-    }
-
-    return room;
   }
 
   private mergeSettings(

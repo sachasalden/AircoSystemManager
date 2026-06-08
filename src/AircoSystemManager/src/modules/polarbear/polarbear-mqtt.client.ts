@@ -1,7 +1,14 @@
-import * as mqtt from "mqtt";
-import { CONFIG, TOPICS } from "../../config/runtime.config";
-import type { PolarbearMqttHandlers } from "../../types/shared.types";
-import { formatError, log, normalizeFanMode, round1, roundHalf, toNumber } from "../../utils/helpers";
+import * as mqtt from 'mqtt';
+import { CONFIG, TOPICS, type MqttTopics } from '../../config/runtime.config';
+import type { PolarbearMqttHandlers } from '../../types/shared.types';
+import {
+  formatError,
+  log,
+  normalizeFanMode,
+  round1,
+  roundHalf,
+  toNumber,
+} from '../../utils/helpers';
 
 export class PolarbearMqttClient {
   private client?: mqtt.MqttClient;
@@ -10,6 +17,7 @@ export class PolarbearMqttClient {
   constructor(
     private broker: string,
     handlers: PolarbearMqttHandlers,
+    private topics: MqttTopics = TOPICS,
   ) {
     this.handlers = handlers;
   }
@@ -19,18 +27,18 @@ export class PolarbearMqttClient {
       const client = mqtt.connect(this.broker);
       this.client = client;
 
-      client.once("connect", () => {
+      client.once('connect', () => {
         log(`polarbear mqtt connected with ${this.broker}`);
 
         client.subscribe(
           [
-            TOPICS.virtualTempState,
-            TOPICS.setTemperatureState,
-            TOPICS.fanModeState,
-            TOPICS.fanSpeedState,
-            TOPICS.setTemperatureSet,
-            TOPICS.fanModeSet,
-            TOPICS.fanSpeedSet,
+            this.topics.virtualTempState,
+            this.topics.setTemperatureState,
+            this.topics.fanModeState,
+            this.topics.fanSpeedState,
+            this.topics.setTemperatureSet,
+            this.topics.fanModeSet,
+            this.topics.fanSpeedSet,
           ],
           (error) => {
             if (error) {
@@ -38,19 +46,19 @@ export class PolarbearMqttClient {
               return;
             }
 
-            log("polarbear mqtt subscribes on state and command topics");
+            log('polarbear mqtt subscribes on state and command topics');
             resolve();
           },
         );
       });
 
-      client.once("error", reject);
+      client.once('error', reject);
 
-      client.on("error", (error) => {
+      client.on('error', (error) => {
         log(`polarbear mqtt error: ${formatError(error)}`);
       });
 
-      client.on("message", (topic, payload) => {
+      client.on('message', (topic, payload) => {
         this.handleMessage(topic, payload);
       });
     });
@@ -65,15 +73,15 @@ export class PolarbearMqttClient {
   }
 
   publishSetTemperatureCommand(value: number): void {
-    this.publishCommand(TOPICS.setTemperatureSet, round1(value));
+    this.publishCommand(this.topics.setTemperatureSet, round1(value));
   }
 
   publishFanModeCommand(value: number): void {
-    this.publishCommand(TOPICS.fanModeSet, normalizeFanMode(value));
+    this.publishCommand(this.topics.fanModeSet, normalizeFanMode(value));
   }
 
   publishFanSpeedCommand(value: number): void {
-    this.publishCommand(TOPICS.fanSpeedSet, value);
+    this.publishCommand(this.topics.fanSpeedSet, value);
   }
 
   private handleMessage(topic: string, payload: Buffer): void {
@@ -86,37 +94,37 @@ export class PolarbearMqttClient {
       return;
     }
 
-    if (topic === TOPICS.virtualTempState) {
+    if (topic === this.topics.virtualTempState) {
       this.handlers.onVirtualTemperature(roundHalf(value));
       return;
     }
 
-    if (topic === TOPICS.setTemperatureState) {
+    if (topic === this.topics.setTemperatureState) {
       this.handlers.onSetTemperatureState(round1(value));
       return;
     }
 
-    if (topic === TOPICS.fanModeState) {
+    if (topic === this.topics.fanModeState) {
       this.handlers.onFanModeState(normalizeFanMode(value));
       return;
     }
 
-    if (topic === TOPICS.fanSpeedState) {
+    if (topic === this.topics.fanSpeedState) {
       this.handlers.onFanSpeedState(Math.round(value));
       return;
     }
 
-    if (topic === TOPICS.setTemperatureSet) {
+    if (topic === this.topics.setTemperatureSet) {
       this.handlers.onSetTemperatureCommand(round1(value));
       return;
     }
 
-    if (topic === TOPICS.fanModeSet) {
+    if (topic === this.topics.fanModeSet) {
       this.handlers.onFanModeCommand(normalizeFanMode(value));
       return;
     }
 
-    if (topic === TOPICS.fanSpeedSet) {
+    if (topic === this.topics.fanSpeedSet) {
       this.handlers.onFanSpeedCommand(Math.round(value));
     }
   }
@@ -129,4 +137,3 @@ export class PolarbearMqttClient {
     log(`mqtt command publish ${topic}=${value}`);
   }
 }
-

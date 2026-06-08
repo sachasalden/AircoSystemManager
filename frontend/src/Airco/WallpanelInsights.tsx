@@ -31,6 +31,7 @@ export default function WallpanelInsights({
   const selectedRoom = selectedZone?.rooms.find(
     (room) => room.id === selectedRoomId,
   );
+  const syncInactive = !syncStatus.running && !syncStatus.paused;
 
   async function fetchInsights() {
     if (!selectedZoneId || !selectedRoomId) return;
@@ -53,8 +54,15 @@ export default function WallpanelInsights({
   }
 
   async function fetchSyncStatus() {
+    if (!selectedZoneId || !selectedRoomId) {
+      setSyncStatus({ paused: false, running: false });
+      return;
+    }
+
     try {
-      const res = await axios.get(`${API_BASE}/wallpanel-insights/sync/status`);
+      const res = await axios.get(
+        `${API_BASE}/wallpanel-insights/rooms/${selectedZoneId}/${selectedRoomId}/sync/status`,
+      );
       setSyncStatus(res.data.polarbearLoop);
     } catch (err) {
       console.error('Failed to fetch polarbear sync status', err);
@@ -62,16 +70,22 @@ export default function WallpanelInsights({
   }
 
   async function setSyncPaused(paused: boolean) {
+    if (!selectedZoneId || !selectedRoomId) {
+      return;
+    }
+
     try {
       setAdminBusy(true);
       setAdminMessage('');
 
       const res = await axios.post(
-        `${API_BASE}/wallpanel-insights/sync/${paused ? 'pause' : 'resume'}`,
+        `${API_BASE}/wallpanel-insights/rooms/${selectedZoneId}/${selectedRoomId}/sync/${paused ? 'pause' : 'resume'}`,
       );
 
       setSyncStatus(res.data.polarbearLoop);
-      setAdminMessage(paused ? 'Polarbear sync paused' : 'Polarbear sync resumed');
+      setAdminMessage(
+        paused ? 'Polarbear sync paused' : 'Polarbear sync resumed',
+      );
     } catch (err: any) {
       setAdminMessage(
         err?.response?.data?.message ||
@@ -83,6 +97,10 @@ export default function WallpanelInsights({
   }
 
   async function rebootPanelUnit(panel: InsightPanel, unitId: number) {
+    if (!selectedZoneId || !selectedRoomId) {
+      return;
+    }
+
     const ok = window.confirm(
       `Reboot wallpanel ${panel.name} terminal ${unitId}?`,
     );
@@ -94,7 +112,7 @@ export default function WallpanelInsights({
       setAdminMessage('');
 
       await axios.post(
-        `${API_BASE}/wallpanel-insights/panels/${panel.panelId}/reboot`,
+        `${API_BASE}/wallpanel-insights/rooms/${selectedZoneId}/${selectedRoomId}/panels/${panel.panelId}/reboot`,
         { unitIds: [unitId] },
       );
 
@@ -110,6 +128,10 @@ export default function WallpanelInsights({
   }
 
   async function setPanelBaudrate(panel: InsightPanel, baudrate: number) {
+    if (!selectedZoneId || !selectedRoomId) {
+      return;
+    }
+
     const ok = window.confirm(
       `Set baudrate ${baudrate} for ${panel.name} terminals ${panel.terminalIds.join(', ')}?`,
     );
@@ -121,7 +143,7 @@ export default function WallpanelInsights({
       setAdminMessage('');
 
       await axios.post(
-        `${API_BASE}/wallpanel-insights/panels/${panel.panelId}/baudrate`,
+        `${API_BASE}/wallpanel-insights/rooms/${selectedZoneId}/${selectedRoomId}/panels/${panel.panelId}/baudrate`,
         { unitIds: panel.terminalIds, baudrate },
       );
 
@@ -151,7 +173,7 @@ export default function WallpanelInsights({
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [selectedZoneId, selectedRoomId]);
 
   useEffect(() => {
     if (!selectedZoneId || !selectedRoomId) {
@@ -164,12 +186,17 @@ export default function WallpanelInsights({
 
     eventSource.addEventListener('insights', (event) => {
       try {
-        const nextData = JSON.parse((event as MessageEvent).data) as InsightResponse;
+        const nextData = JSON.parse(
+          (event as MessageEvent).data,
+        ) as InsightResponse;
         setData(nextData);
         setError('');
         setLoading(false);
       } catch (streamError) {
-        console.error('Failed to parse wallpanel insights stream payload', streamError);
+        console.error(
+          'Failed to parse wallpanel insights stream payload',
+          streamError,
+        );
       }
     });
 
@@ -212,15 +239,25 @@ export default function WallpanelInsights({
 
         <div className="wallpanel-sync-toolbar">
           <span
-            className={`sync-pill ${syncStatus.paused ? 'paused' : 'active'}`}
+            className={`sync-pill ${
+              syncInactive
+                ? 'inactive'
+                : syncStatus.paused
+                  ? 'paused'
+                  : 'active'
+            }`}
           >
             <span className="sync-dot" />
-            {syncStatus.paused ? 'Sync paused' : 'Sync active'}
+            {syncInactive
+              ? 'Sync inactive'
+              : syncStatus.paused
+                ? 'Sync paused'
+                : 'Sync active'}
           </span>
           <button
             className="sync-action-btn"
             type="button"
-            disabled={adminBusy || syncStatus.paused}
+            disabled={adminBusy || syncStatus.paused || syncInactive}
             onClick={() => void setSyncPaused(true)}
           >
             Pause sync
@@ -242,6 +279,7 @@ export default function WallpanelInsights({
           <span>{syncStatus.queuedAircoMessages} queued airco changes</span>
         ) : null}
         {adminMessage ? <span>{adminMessage}</span> : null}
+        {syncStatus.error ? <span>{syncStatus.error}</span> : null}
       </div>
 
       <WallpanelInsightsFilters
