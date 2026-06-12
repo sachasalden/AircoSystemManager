@@ -75,6 +75,8 @@ export class WallpanelPollerService {
   private running = true;
   private pollPaused = false;
   private pollCycleRunning = false;
+  private wallpanelConnected = false;
+  private nextWallpanelReconnectAt = 0;
 
   constructor(private settings: RuntimeSettings) {
     this.topics = createTopics(settings);
@@ -97,25 +99,24 @@ export class WallpanelPollerService {
   }
 
   async start(): Promise<void> {
-    await this.client.connect(
-      this.settings.wallpanel.host,
-      this.settings.wallpanel.port,
-    );
-
     log(
       `polarbear publisher gestart room=${this.settings.climatezoneName}/${this.settings.roomName} panel=${this.settings.wallpanel.host}:${this.settings.wallpanel.port} debounce=${CONFIG.wallpanel.debounceMs}ms commandTopic=${this.topics.setTemperatureSet}`,
     );
 
-    await this.clearStartupFlags();
-    await this.initializeSetpointCache();
-
     /**
-     * after startup/cache subscribe on virtualTemp,
-     * so retained MQTT doesn't put old values to startup-cache.
+     * MQTT can already run while the wallpanel is offline.
+     * The Modbus connection is retried in the poll loop.
      */
     await this.mqttClient.connect();
 
     while (this.running) {
+      const connected = await this.ensureWallpanelConnected();
+
+      if (!connected) {
+        await sleep(CONFIG.wallpanel.pollIntervalMs);
+        continue;
+      }
+
       if (this.pollPaused) {
         await sleep(CONFIG.wallpanel.pollIntervalMs);
         continue;
@@ -219,6 +220,70 @@ export class WallpanelPollerService {
     await this.client.close();
   }
 
+  private async ensureWallpanelConnected(): Promise<boolean> {
+    if (this.wallpanelConnected) {
+      return true;
+    }
+
+    const now = Date.now();
+
+    if (now < this.nextWallpanelReconnectAt) {
+      return false;
+    }
+
+    try {
+      await this.client.connect(
+        this.settings.wallpanel.host,
+        this.settings.wallpanel.port,
+      );
+      this.wallpanelConnected = true;
+
+      log(
+        `wallpanel connected panel=${this.settings.wallpanel.host}:${this.settings.wallpanel.port}`,
+      );
+
+      await this.clearStartupFlags();
+      await this.initializeSetpointCache();
+      await this.syncRetainedMqttStateAfterStartup();
+
+      return true;
+    } catch (error) {
+      this.wallpanelConnected = false;
+      this.nextWallpanelReconnectAt =
+        Date.now() + CONFIG.wallpanel.reconnectIntervalMs;
+
+      log(
+        `wallpanel connect failed panel=${this.settings.wallpanel.host}:${this.settings.wallpanel.port}, retry in ${CONFIG.wallpanel.reconnectIntervalMs / 1000}s: ${formatError(error)}`,
+      );
+
+      try {
+        await this.client.close();
+      } catch {
+        // ignore close errors after failed connect
+      }
+
+      return false;
+    }
+  }
+
+  private markWallpanelDisconnected(context: string, error: unknown): void {
+    if (!this.wallpanelConnected) {
+      return;
+    }
+
+    this.wallpanelConnected = false;
+    this.nextWallpanelReconnectAt =
+      Date.now() + CONFIG.wallpanel.reconnectIntervalMs;
+
+    log(
+      `wallpanel connection lost during ${context}, retry in ${CONFIG.wallpanel.reconnectIntervalMs / 1000}s: ${formatError(error)}`,
+    );
+
+    void this.client.close().catch(() => {
+      // ignore close errors after connection loss
+    });
+  }
+
   private async poll(): Promise<void> {
     for (const unit of this.settings.wallpanel.units) {
       let flags: number;
@@ -227,6 +292,7 @@ export class WallpanelPollerService {
         flags = await this.polarbear.getFlags(unit.id);
       } catch (error) {
         log(`flags read failed unit=${unit.id}: ${formatError(error)}`);
+        this.markWallpanelDisconnected('flags read', error);
         continue;
       }
 
@@ -579,6 +645,14 @@ export class WallpanelPollerService {
 
     await this.flushMqttCommands();
     await this.flushVirtualTempIfWallpanelIdle();
+  }
+
+  private async syncRetainedMqttStateAfterStartup(): Promise<void> {
+    await sleep(CONFIG.mqtt.retainedStartupSyncDelayMs);
+
+    log('polarbear startup: mqtt state first to polarbears');
+    await this.syncLatestMqttStateToPolarbears();
+    await this.initializeSetpointCache();
   }
 
   private newestMqttValue(

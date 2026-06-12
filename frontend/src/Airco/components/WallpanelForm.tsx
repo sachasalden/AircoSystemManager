@@ -7,6 +7,7 @@ import {
   SelectInput,
   TextInput,
 } from './ClimateFormControls';
+import ConfirmModal from './ConfirmModal';
 
 type WallpanelFormValue = {
   name: string;
@@ -39,6 +40,7 @@ export default function WallpanelForm({
   const [modbusUnits, setModbusUnits] = useState<WallpanelUnit[]>(
     initialValue?.modbusUnits ?? [],
   );
+  const [unitToRemove, setUnitToRemove] = useState<number | null>(null);
 
   useEffect(() => {
     setName(initialValue?.name ?? '');
@@ -47,6 +49,7 @@ export default function WallpanelForm({
     setNewUnitId('');
     setNewUnitType('polarbear-v1');
     setModbusUnits(initialValue?.modbusUnits ?? []);
+    setUnitToRemove(null);
   }, [initialValue]);
 
   function resetForm() {
@@ -56,6 +59,7 @@ export default function WallpanelForm({
     setNewUnitId('');
     setNewUnitType('polarbear-v1');
     setModbusUnits(initialValue?.modbusUnits ?? []);
+    setUnitToRemove(null);
   }
 
   function addUnitIds() {
@@ -78,8 +82,13 @@ export default function WallpanelForm({
     setNewUnitId('');
   }
 
-  function removeUnitId(id: number) {
-    setModbusUnits((state) => state.filter((unit) => unit.id !== id));
+  function confirmRemoveUnitId() {
+    if (unitToRemove === null) {
+      return;
+    }
+
+    setModbusUnits((state) => state.filter((unit) => unit.id !== unitToRemove));
+    setUnitToRemove(null);
   }
 
   function setUnitVersion(id: number, type: WallpanelVersion) {
@@ -142,7 +151,7 @@ export default function WallpanelForm({
               <button
                 type="button"
                 className="action-btn action-btn-danger action-btn-small"
-                onClick={() => removeUnitId(unit.id)}
+                onClick={() => setUnitToRemove(unit.id)}
               >
                 Remove
               </button>
@@ -183,6 +192,13 @@ export default function WallpanelForm({
           </button>
         )}
       </FormActions>
+      <ConfirmModal
+        title="Remove unit"
+        message={`Are you sure you want to remove unit ${unitToRemove ?? ''}?`}
+        open={unitToRemove !== null}
+        onCancel={() => setUnitToRemove(null)}
+        onConfirm={confirmRemoveUnitId}
+      />
     </div>
   );
 }

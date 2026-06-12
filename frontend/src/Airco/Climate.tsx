@@ -9,6 +9,7 @@ import AirconditionerForm from './components/AirconditionerForm';
 import ConfirmModal from './components/ConfirmModal';
 import EnvironmentDeviceCard from './components/EnvironmentDeviceCard';
 import EnvironmentDeviceForm from './components/EnvironmentDeviceForm';
+import NameModal from './components/NameModal';
 import WallpanelCard from './components/WallpanelCard';
 import WallpanelForm from './components/WallpanelForm';
 import {
@@ -23,6 +24,13 @@ import {
   type WallpanelVersion,
   type Zone,
 } from './model';
+
+type NameModalState =
+  | { mode: 'add-zone' }
+  | { mode: 'edit-zone'; zone: Zone }
+  | { mode: 'add-room'; zoneId: string; zoneName: string }
+  | { mode: 'edit-room'; zoneId: string; room: Room }
+  | null;
 
 export default function Climate() {
   const [zones, setZones] = useState<Zone[]>([]);
@@ -51,8 +59,13 @@ export default function Climate() {
   const [roomModalOpen, setRoomModalOpen] = useState(false);
   const [roomToDelete, setRoomToDelete] = useState<string | null>(null);
 
+  const [environmentDeviceToDelete, setEnvironmentDeviceToDelete] = useState<
+    string | null
+  >(null);
+
   const [showWallpanelForm, setShowWallpanelForm] = useState(false);
   const [showAircoForm, setShowAircoForm] = useState(false);
+  const [nameModal, setNameModal] = useState<NameModalState>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -98,14 +111,9 @@ export default function Climate() {
   const compatibleEnvironmentDevices = environmentDevices.filter((device) =>
     supportedEnvironmentDeviceTypes.includes(device.type),
   );
+  const nameModalContent = getNameModalContent(nameModal);
 
-  async function addZone() {
-    const name = window.prompt('Zone name', 'New zone')?.trim();
-
-    if (!name) {
-      return;
-    }
-
+  async function addZone(name: string) {
     try {
       const res = await axios.post(`${API_BASE}/zones`, { name });
       const [zone] = normalizeZones([res.data]);
@@ -114,6 +122,7 @@ export default function Climate() {
       setActiveView('zones');
       setSelectedZoneId(zone.id);
       setSelectedRoomId(null);
+      setNameModal(null);
     } catch (err) {
       console.error('Failed to add zone', err);
       window.alert('Failed to add zone');
@@ -143,10 +152,9 @@ export default function Climate() {
     }
   }
 
-  async function renameZone(zone: Zone) {
-    const name = window.prompt('Zone name', zone.name)?.trim();
-
-    if (!name || name === zone.name) {
+  async function renameZone(zone: Zone, name: string) {
+    if (name === zone.name) {
+      setNameModal(null);
       return;
     }
 
@@ -159,31 +167,23 @@ export default function Climate() {
           item.id === zone.id ? { ...item, ...updatedZone } : item,
         ),
       );
+      setNameModal(null);
     } catch (err) {
       console.error('Failed to rename zone', err);
       window.alert('Failed to rename zone');
     }
   }
 
-  async function addRoom() {
-    if (!selectedZoneId) {
+  async function addRoom(zoneId: string, name: string) {
+    if (!zoneId) {
       window.alert('Select a zone first.');
       return;
     }
 
-    const name = window.prompt('Room name', 'New room')?.trim();
-
-    if (!name) {
-      return;
-    }
-
     try {
-      const res = await axios.post(
-        `${API_BASE}/zones/${selectedZoneId}/rooms`,
-        {
-          name,
-        },
-      );
+      const res = await axios.post(`${API_BASE}/zones/${zoneId}/rooms`, {
+        name,
+      });
       const room: Room = {
         id: String(res.data.id ?? ''),
         name: String(res.data.name ?? name),
@@ -193,7 +193,7 @@ export default function Climate() {
 
       setZones((prevZones) =>
         prevZones.map((zone) =>
-          zone.id !== selectedZoneId
+          zone.id !== zoneId
             ? zone
             : {
                 ...zone,
@@ -201,7 +201,9 @@ export default function Climate() {
               },
         ),
       );
+      setSelectedZoneId(zoneId);
       setSelectedRoomId(room.id);
+      setNameModal(null);
     } catch (err) {
       console.error('Failed to add room', err);
       window.alert('Failed to add room');
@@ -241,10 +243,9 @@ export default function Climate() {
     }
   }
 
-  async function renameRoom(zoneId: string, room: Room) {
-    const name = window.prompt('Room name', room.name)?.trim();
-
-    if (!name || name === room.name) {
+  async function renameRoom(zoneId: string, room: Room, name: string) {
+    if (name === room.name) {
+      setNameModal(null);
       return;
     }
 
@@ -267,6 +268,7 @@ export default function Climate() {
               },
         ),
       );
+      setNameModal(null);
     } catch (err) {
       console.error('Failed to rename room', err);
       window.alert('Failed to rename room');
@@ -303,10 +305,16 @@ export default function Climate() {
     }
   }
 
-  async function deleteEnvironmentDevice(id: string) {
+  async function confirmDeleteEnvironmentDevice() {
+    if (!environmentDeviceToDelete) {
+      return;
+    }
+
     const isUsed = zones.some((zone) =>
       zone.rooms.some((room) =>
-        room.airconditioners.some((airco) => airco.data.deviceId === id),
+        room.airconditioners.some(
+          (airco) => airco.data.deviceId === environmentDeviceToDelete,
+        ),
       ),
     );
 
@@ -318,13 +326,19 @@ export default function Climate() {
     }
 
     try {
-      await axios.delete(`${API_BASE}/environment-devices/${id}`);
+      await axios.delete(
+        `${API_BASE}/environment-devices/${environmentDeviceToDelete}`,
+      );
 
-      const remaining = environmentDevices.filter((device) => device.id !== id);
+      const remaining = environmentDevices.filter(
+        (device) => device.id !== environmentDeviceToDelete,
+      );
       setEnvironmentDevices(remaining);
     } catch (err) {
       console.error('Failed to delete environment device', err);
       window.alert('Failed to delete environment device');
+    } finally {
+      setEnvironmentDeviceToDelete(null);
     }
   }
 
@@ -730,7 +744,7 @@ export default function Climate() {
             <button
               className="action-btn action-btn-neutral action-btn-small"
               type="button"
-              onClick={() => renameZone(zone)}
+              onClick={() => setNameModal({ mode: 'edit-zone', zone })}
               aria-label={`Edit zone ${zone.name}`}
             >
               Edit
@@ -752,7 +766,7 @@ export default function Climate() {
         <button
           className="action-btn action-btn-primary zone-add-btn-below"
           type="button"
-          onClick={addZone}
+          onClick={() => setNameModal({ mode: 'add-zone' })}
         >
           New zone
         </button>
@@ -776,7 +790,7 @@ export default function Climate() {
                   <EnvironmentDeviceCard
                     key={device.id}
                     device={device}
-                    onRemove={() => deleteEnvironmentDevice(device.id)}
+                    onRemove={() => setEnvironmentDeviceToDelete(device.id)}
                   />
                 ))
               )}
@@ -813,7 +827,9 @@ export default function Climate() {
                     <button
                       type="button"
                       className="action-btn action-btn-neutral"
-                      onClick={() => renameZone(selectedZone)}
+                      onClick={() =>
+                        setNameModal({ mode: 'edit-zone', zone: selectedZone })
+                      }
                     >
                       Edit zone
                     </button>
@@ -841,7 +857,13 @@ export default function Climate() {
                     <button
                       type="button"
                       className="action-btn action-btn-primary"
-                      onClick={addRoom}
+                      onClick={() =>
+                        setNameModal({
+                          mode: 'add-room',
+                          zoneId: selectedZone.id,
+                          zoneName: selectedZone.name,
+                        })
+                      }
                     >
                       New room
                     </button>
@@ -871,7 +893,13 @@ export default function Climate() {
                         <button
                           className="action-btn action-btn-neutral action-btn-small"
                           type="button"
-                          onClick={() => renameRoom(selectedZone.id, room)}
+                          onClick={() =>
+                            setNameModal({
+                              mode: 'edit-room',
+                              zoneId: selectedZone.id,
+                              room,
+                            })
+                          }
                           aria-label={`Edit room ${room.name}`}
                         >
                           Edit
@@ -912,10 +940,15 @@ export default function Climate() {
                       <button
                         type="button"
                         className="action-btn action-btn-neutral"
-                        onClick={() =>
-                          selectedZoneId &&
-                          renameRoom(selectedZoneId, selectedRoom)
-                        }
+                        onClick={() => {
+                          if (!selectedZoneId) return;
+
+                          setNameModal({
+                            mode: 'edit-room',
+                            zoneId: selectedZoneId,
+                            room: selectedRoom,
+                          });
+                        }}
                       >
                         Edit room
                       </button>
@@ -1083,6 +1116,93 @@ export default function Climate() {
         onCancel={() => setRoomModalOpen(false)}
         onConfirm={confirmDeleteRoom}
       />
+
+      <ConfirmModal
+        title="Remove airco system device"
+        message="Are you sure you want to remove this airco system device?"
+        open={Boolean(environmentDeviceToDelete)}
+        onCancel={() => setEnvironmentDeviceToDelete(null)}
+        onConfirm={confirmDeleteEnvironmentDevice}
+      />
+
+      {nameModalContent && (
+        <NameModal
+          title={nameModalContent.title}
+          message={nameModalContent.message}
+          label={nameModalContent.label}
+          open={Boolean(nameModal)}
+          initialValue={nameModalContent.initialValue}
+          confirmLabel={nameModalContent.confirmLabel}
+          onCancel={() => setNameModal(null)}
+          onSubmit={(name) => {
+            if (!nameModal) {
+              return;
+            }
+
+            if (nameModal.mode === 'add-zone') {
+              void addZone(name);
+              return;
+            }
+
+            if (nameModal.mode === 'edit-zone') {
+              void renameZone(nameModal.zone, name);
+              return;
+            }
+
+            if (nameModal.mode === 'add-room') {
+              void addRoom(nameModal.zoneId, name);
+              return;
+            }
+
+            void renameRoom(nameModal.zoneId, nameModal.room, name);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function getNameModalContent(modal: NameModalState) {
+  if (!modal) {
+    return null;
+  }
+
+  if (modal.mode === 'add-zone') {
+    return {
+      title: 'New zone',
+      message:
+        'Create a climate zone first. Rooms and devices are added inside a zone.',
+      label: 'Zone name',
+      initialValue: 'New zone',
+      confirmLabel: 'Create zone',
+    };
+  }
+
+  if (modal.mode === 'edit-zone') {
+    return {
+      title: 'Edit zone',
+      message: 'Rename this climate zone. Rooms and devices stay linked.',
+      label: 'Zone name',
+      initialValue: modal.zone.name,
+      confirmLabel: 'Save zone',
+    };
+  }
+
+  if (modal.mode === 'add-room') {
+    return {
+      title: 'New room',
+      message: `Create a room inside ${modal.zoneName}. Wallpanels and airconditioners are added after this.`,
+      label: 'Room name',
+      initialValue: 'New room',
+      confirmLabel: 'Create room',
+    };
+  }
+
+  return {
+    title: 'Edit room',
+    message: 'Rename this room. Wallpanels and airconditioners stay linked.',
+    label: 'Room name',
+    initialValue: modal.room.name,
+    confirmLabel: 'Save room',
+  };
 }

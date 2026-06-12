@@ -81,8 +81,11 @@ export class AircoMqttBridgeService {
         client.subscribe(
           [
             this.topics.setTemperatureSet,
+            this.topics.setTemperatureState,
             this.topics.fanModeSet,
+            this.topics.fanModeState,
             this.topics.fanSpeedSet,
+            this.topics.fanSpeedState,
           ],
           (error) => {
             if (error) {
@@ -90,7 +93,7 @@ export class AircoMqttBridgeService {
               return;
             }
 
-            log('airco bridge subscribes on command topics');
+            log('airco bridge subscribes on command and state topics');
             resolve();
           },
         );
@@ -120,23 +123,35 @@ export class AircoMqttBridgeService {
       return;
     }
 
-    if (topic === this.topics.setTemperatureSet) {
-      await this.handleSetTemperature(value);
+    if (
+      topic === this.topics.setTemperatureSet ||
+      topic === this.topics.setTemperatureState
+    ) {
+      await this.handleSetTemperature(
+        value,
+        topic === this.topics.setTemperatureSet,
+      );
       return;
     }
 
-    if (topic === this.topics.fanModeSet) {
-      await this.handleFanMode(value);
+    if (topic === this.topics.fanModeSet || topic === this.topics.fanModeState) {
+      await this.handleFanMode(value, topic === this.topics.fanModeSet);
       return;
     }
 
-    if (topic === this.topics.fanSpeedSet) {
-      await this.handleFanSpeed(value);
+    if (
+      topic === this.topics.fanSpeedSet ||
+      topic === this.topics.fanSpeedState
+    ) {
+      await this.handleFanSpeed(value, topic === this.topics.fanSpeedSet);
       return;
     }
   }
 
-  private async handleSetTemperature(value: number): Promise<void> {
+  private async handleSetTemperature(
+    value: number,
+    publishState: boolean,
+  ): Promise<void> {
     const temperature = round1(value);
 
     log(`airco received setTemperature=${temperature} via mqtt `);
@@ -149,10 +164,15 @@ export class AircoMqttBridgeService {
       ),
     );
 
-    this.publishState(this.topics.setTemperatureState, temperature);
+    if (publishState) {
+      this.publishState(this.topics.setTemperatureState, temperature);
+    }
   }
 
-  private async handleFanMode(value: number): Promise<void> {
+  private async handleFanMode(
+    value: number,
+    publishState: boolean,
+  ): Promise<void> {
     const fanMode = normalizeFanMode(value);
 
     log(`airco received fanMode=${fanMode} via mqtt`);
@@ -165,10 +185,15 @@ export class AircoMqttBridgeService {
       ),
     );
 
-    this.publishState(this.topics.fanModeState, fanMode);
+    if (publishState) {
+      this.publishState(this.topics.fanModeState, fanMode);
+    }
   }
 
-  private async handleFanSpeed(value: number): Promise<void> {
+  private async handleFanSpeed(
+    value: number,
+    publishState: boolean,
+  ): Promise<void> {
     log(`airco received fanSpeed=${value} via mqtt`);
 
     await this.safeWrite(() =>
@@ -179,7 +204,9 @@ export class AircoMqttBridgeService {
       ),
     );
 
-    this.publishState(this.topics.fanSpeedState, value);
+    if (publishState) {
+      this.publishState(this.topics.fanSpeedState, value);
+    }
   }
 
   private async virtualTempLoop(): Promise<void> {

@@ -10,6 +10,7 @@ import {
   SelectInput,
   TextInput,
 } from './ClimateFormControls';
+import ConfirmModal from './ConfirmModal';
 
 type WallpanelCardProps = {
   device: WallpanelDevice;
@@ -47,6 +48,7 @@ export default function WallpanelCard({
   const [editNewUnitType, setEditNewUnitType] =
     useState<WallpanelVersion>('polarbear-v1');
   const [editUnits, setEditUnits] = useState<WallpanelUnit[]>(initialUnits);
+  const [unitToRemove, setUnitToRemove] = useState<number | null>(null);
 
   useEffect(() => {
     const unitsNow =
@@ -63,6 +65,7 @@ export default function WallpanelCard({
     setEditUnits(unitsNow);
     setEditNewUnitId('');
     setEditNewUnitType('polarbear-v1');
+    setUnitToRemove(null);
   }, [device]);
 
   const unitsText = initialUnits.length
@@ -89,8 +92,13 @@ export default function WallpanelCard({
     setEditNewUnitId('');
   }
 
-  function removeEditUnitId(id: number) {
-    setEditUnits((state) => state.filter((unit) => unit.id !== id));
+  function confirmRemoveEditUnitId() {
+    if (unitToRemove === null) {
+      return;
+    }
+
+    setEditUnits((state) => state.filter((unit) => unit.id !== unitToRemove));
+    setUnitToRemove(null);
   }
 
   function setEditUnitVersion(id: number, type: WallpanelVersion) {
@@ -115,6 +123,7 @@ export default function WallpanelCard({
     setEditUnits(unitsNow);
     setEditNewUnitId('');
     setEditNewUnitType('polarbear-v1');
+    setUnitToRemove(null);
   }
 
   async function saveEdit() {
@@ -259,7 +268,7 @@ export default function WallpanelCard({
                       <button
                         type="button"
                         className="action-btn action-btn-danger action-btn-small"
-                        onClick={() => removeEditUnitId(unit.id)}
+                        onClick={() => setUnitToRemove(unit.id)}
                       >
                         Remove
                       </button>
@@ -288,6 +297,13 @@ export default function WallpanelCard({
           </>
         )}
       </div>
+      <ConfirmModal
+        title="Remove unit"
+        message={`Are you sure you want to remove unit ${unitToRemove ?? ''}?`}
+        open={unitToRemove !== null}
+        onCancel={() => setUnitToRemove(null)}
+        onConfirm={confirmRemoveEditUnitId}
+      />
     </div>
   );
 }

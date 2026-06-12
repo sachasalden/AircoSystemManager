@@ -8,6 +8,7 @@ export const CONFIG = {
     timeoutMs: 10000,
     requestGapMs: 100,
     pollIntervalMs: 100,
+    reconnectIntervalMs: 10000,
 
     debounceMs: 5000,
     suppressOwnWriteMs: 12000,
@@ -35,6 +36,7 @@ export const CONFIG = {
 
     retainCommands: false,
     retainStates: true,
+    retainedStartupSyncDelayMs: 500,
   },
 
   control: {

@@ -1185,6 +1185,18 @@
   margin: 0;
 }
 
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.modal-field span {
+  color: #cbd6e6;
+  font-size: 13px;
+}
+
 .wp-modal-actions {
   display: flex;
   justify-content: flex-end;
